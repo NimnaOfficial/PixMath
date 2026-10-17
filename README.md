@@ -34,11 +34,13 @@
 ```
 
 ### 1. Forward Engine (Math → Image)
+
 - **Mathematical Formulations**: Evaluates continuous 2D coordinate spaces mapping $(x, y) \to (R, G, B)$ using trigonometric polynomials, Signed Distance Functions (SDFs), and Simplex noise domain warping.
 - **Compiler Security**: Python `ast.NodeVisitor` sandbox enforcing node whitelists, depth caps ($\le 32$), and node volume limits ($\le 2000$).
 - **Hardware Acceleration**: Transpiles validated ASTs directly into GLSL fragment shaders for sub-millisecond GPU rendering via WebGL2 (client) or ModernGL EGL (server).
 
 ### 2. Reverse Engine (Image → Math)
+
 - **Implicit Neural Representations**: Trains coordinate MLPs with periodic activations (SIREN with $\omega_0 = 30.0$) or Kolmogorov-Arnold Networks (KAN) to capture high frequencies without spectral bias.
 - **Symbolic Regression**: Uses evolutionary genetic programming (PySR) to distill the continuous neural weights into compact, closed-form algebraic expressions.
 - **Pareto Frontier Optimization**: Automatically selects the "Pareto elbow" formula to deliver the highest visual fidelity (PSNR/SSIM) with the most concise equation.
@@ -74,6 +76,7 @@ pixmath/
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Python 3.11+
 - Node.js 18+ & npm
 - Docker & Docker Compose (optional for local infrastructure)
@@ -82,6 +85,7 @@ pixmath/
 ### ⚡ Quick Start (One Command Full-Stack Launch)
 
 Run the entire platform (Frontend + API Gateway + Workers + Infrastructure):
+
 ```powershell
 # In PowerShell:
 .\start_project.ps1
@@ -91,6 +95,7 @@ start_project.cmd
 ```
 
 To stop all services cleanly and free ports 8000 and 5173:
+
 ```powershell
 # In PowerShell:
 .\stop_project.ps1
@@ -104,17 +109,21 @@ stop_project.cmd
 ### Manual Step-by-Step Setup
 
 #### 1. Local Infrastructure (Docker)
+
 ```bash
 docker compose -f infra/compose.yaml up -d
 ```
+
 Starts RabbitMQ (5672), Redis (6379), PostgreSQL (5432), and MinIO (9000).
 
 ### 2. Python Workspace Setup
+
 ```bash
 uv sync
 ```
 
 ### 3. Running the PixMath CLI
+
 ```bash
 # Render a mathematical formula directly to PNG
 uv run pixmath render --eq "sin(10.0 * sqrt(x*x + y*y) - t) * cos(8.0 * atan2(y, x))" --out art.png
@@ -124,11 +133,13 @@ uv run pixmath info
 ```
 
 ### 4. Running the Web Studio
+
 ```bash
 cd apps/web-studio
 npm install
 npm run dev
 ```
+
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ---
@@ -149,7 +160,9 @@ uv run pytest tests/integration -m integration
 ---
 
 ## 🔒 Security Guarantee
+
 PixMath evaluates user-supplied mathematical equations without ever executing arbitrary Python code. All formulas must strictly pass the `SecurityASTValidator` which strips non-whitelisted operations, blocks dunder methods (`__subclasses__`, `__class__`), and enforces strict structural depth caps before compilation to GLSL.
 
 ## 📄 License
+
 MIT © PixMath Authors.
