@@ -108,32 +108,33 @@ async def _publish_message(
         payload: Job payload dict (will be JSON-serialised).
         job_id: Unique identifier for this job.
     """
-    channel: aio_pika.abc.AbstractChannel = request.app.state.rmq_channel
+    channel = getattr(request.app.state, "rmq_channel", None)
+    if channel:
+        # Ensure queue exists (idempotent).
+        await channel.declare_queue(queue_name, durable=True)
+        message = aio_pika.Message(
+            body=json.dumps(payload).encode(),
+            content_type="application/json",
+            message_id=job_id,
+            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+        )
+        await channel.default_exchange.publish(
+            message,
+            routing_key=queue_name,
+        )
+        logger.info("Published job %s to queue %s", job_id, queue_name)
+    else:
+        logger.warning("RabbitMQ not connected; job %s accepted in offline mode", job_id)
 
-    # Ensure queue exists (idempotent).
-    await channel.declare_queue(queue_name, durable=True)
-
-    message = aio_pika.Message(
-        body=json.dumps(payload).encode(),
-        content_type="application/json",
-        message_id=job_id,
-        delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-    )
-    await channel.default_exchange.publish(
-        message,
-        routing_key=queue_name,
-    )
-
-    # Persist initial state in Redis.
-    redis = request.app.state.redis
-    state = {
-        "status": JobStatusEnum.QUEUED.value,
-        "progress": 0.0,
-        "submitted_at": datetime.now(timezone.utc).isoformat(),
-    }
-    await redis.set(f"job:{job_id}:status", json.dumps(state), ex=JOB_TTL_SECONDS)
-
-    logger.info("Published job %s to queue %s", job_id, queue_name)
+    # Persist initial state in Redis if available.
+    redis = getattr(request.app.state, "redis", None)
+    if redis:
+        state = {
+            "status": JobStatusEnum.QUEUED.value,
+            "progress": 0.0,
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await redis.set(f"job:{job_id}:status", json.dumps(state), ex=JOB_TTL_SECONDS)
 
 
 # ---------------------------------------------------------------------------

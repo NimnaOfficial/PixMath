@@ -7,6 +7,7 @@ via an async lifespan context.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -51,31 +52,53 @@ settings = GatewaySettings()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Connect to RabbitMQ and Redis on startup; close on shutdown."""
+    app.state.rmq_connection = None
+    app.state.rmq_channel = None
+    app.state.redis = None
 
     # --- startup ---------------------------------------------------------
-    logger.info("Connecting to RabbitMQ at %s", settings.rabbitmq_url)
-    app.state.rmq_connection = await aio_pika.connect_robust(
-        settings.rabbitmq_url,
-    )
-    app.state.rmq_channel = await app.state.rmq_connection.channel()
-    logger.info("RabbitMQ connection established.")
+    try:
+        logger.info("Connecting to RabbitMQ at %s", settings.rabbitmq_url)
+        app.state.rmq_connection = await asyncio.wait_for(
+            aio_pika.connect_robust(settings.rabbitmq_url),
+            timeout=3.0,
+        )
+        app.state.rmq_channel = await app.state.rmq_connection.channel()
+        logger.info("RabbitMQ connection established.")
+    except Exception as exc:
+        logger.warning("RabbitMQ offline (%s). Running in standalone mode.", exc)
 
-    logger.info("Connecting to Redis at %s", settings.redis_url)
-    app.state.redis = aioredis.from_url(
-        settings.redis_url,
-        decode_responses=True,
-    )
-    # Verify connectivity with a PING.
-    await app.state.redis.ping()
-    logger.info("Redis connection established.")
+    try:
+        logger.info("Connecting to Redis at %s", settings.redis_url)
+        app.state.redis = aioredis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+        )
+        await asyncio.wait_for(app.state.redis.ping(), timeout=3.0)
+        logger.info("Redis connection established.")
+    except Exception as exc:
+        logger.warning("Redis offline (%s). Running in standalone mode.", exc)
+        app.state.redis = None
 
     yield  # ----------- application is running ---------------------------
 
     # --- shutdown --------------------------------------------------------
     logger.info("Shutting down: closing RabbitMQ & Redis connections…")
-    await app.state.rmq_channel.close()
-    await app.state.rmq_connection.close()
-    await app.state.redis.aclose()  # type: ignore[union-attr]
+    if app.state.rmq_channel:
+        try:
+            await app.state.rmq_channel.close()
+        except Exception:
+            pass
+    if app.state.rmq_connection:
+        try:
+            await app.state.rmq_connection.close()
+        except Exception:
+            pass
+    if app.state.redis:
+        try:
+            await app.state.redis.aclose()
+        except Exception:
+            pass
     logger.info("Shutdown complete.")
 
 

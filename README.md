@@ -79,7 +79,31 @@ pixmath/
 - Docker & Docker Compose (optional for local infrastructure)
 - `uv` (recommended fast Python package manager)
 
-### 1. Local Infrastructure
+### ⚡ Quick Start (One Command Full-Stack Launch)
+
+Run the entire platform (Frontend + API Gateway + Workers + Infrastructure):
+```powershell
+# In PowerShell:
+.\start_project.ps1
+
+# Or from Windows CMD:
+start_project.cmd
+```
+
+To stop all services cleanly and free ports 8000 and 5173:
+```powershell
+# In PowerShell:
+.\stop_project.ps1
+
+# Or from Windows CMD:
+stop_project.cmd
+```
+
+---
+
+### Manual Step-by-Step Setup
+
+#### 1. Local Infrastructure (Docker)
 ```bash
 docker compose -f infra/compose.yaml up -d
 ```
