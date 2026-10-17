@@ -1,0 +1,22 @@
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_SYSTEM_PYTHON=1
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+COPY libs/math-core/pyproject.toml /app/libs/math-core/pyproject.toml
+COPY apps/api-gateway/pyproject.toml /app/apps/api-gateway/pyproject.toml
+COPY pyproject.toml uv.lock /app/
+
+RUN uv sync --frozen --no-dev --package pixmath-api-gateway
+
+COPY libs/math-core/ /app/libs/math-core/
+COPY apps/api-gateway/ /app/apps/api-gateway/
+
+EXPOSE 8000
+
+CMD ["uv", "run", "--package", "pixmath-api-gateway", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

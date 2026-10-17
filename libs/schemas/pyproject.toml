@@ -1,0 +1,16 @@
+[project]
+name = "pixmath-schemas"
+version = "0.1.0"
+description = "FlatBuffers and Protobuf schema definitions for PixMath AST and job contracts"
+requires-python = ">=3.11,<3.14"
+license = { text = "MIT" }
+
+dependencies = [
+    "flatbuffers>=24.3",
+    "grpcio-tools>=1.60",
+    "protobuf>=5.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

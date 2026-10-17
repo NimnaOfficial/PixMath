@@ -1,0 +1,18 @@
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_SYSTEM_PYTHON=1
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+COPY services/dlx-monitor/pyproject.toml /app/services/dlx-monitor/pyproject.toml
+COPY pyproject.toml uv.lock /app/
+
+RUN uv sync --frozen --no-dev --package pixmath-dlx-monitor
+
+COPY services/dlx-monitor/ /app/services/dlx-monitor/
+
+CMD ["uv", "run", "--package", "pixmath-dlx-monitor", "python", "-m", "app.telemetry"]

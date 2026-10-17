@@ -1,0 +1,76 @@
+// PixMath AST Tree — FlatBuffers Schema
+// Used for zero-copy serialization of AST mutations during genetic programming.
+
+namespace pixmath.schemas;
+
+enum NodeType : byte {
+    Constant = 0,
+    Variable = 1,
+    BinaryOp = 2,
+    UnaryOp = 3,
+    FunctionCall = 4,
+}
+
+enum BinaryOperator : byte {
+    Add = 0,
+    Sub = 1,
+    Mul = 2,
+    Div = 3,
+    Pow = 4,
+    Mod = 5,
+}
+
+enum UnaryOperator : byte {
+    Neg = 0,
+    Abs = 1,
+    Sin = 2,
+    Cos = 3,
+    Tan = 4,
+    Exp = 5,
+    Log = 6,
+    Sqrt = 7,
+    Floor = 8,
+    Ceil = 9,
+    Sign = 10,
+    Asin = 11,
+    Acos = 12,
+    Atan = 13,
+}
+
+table ASTNode {
+    node_type: NodeType;
+    // For Constant nodes
+    value: float64 = 0.0;
+    // For Variable nodes: 0=x, 1=y, 2=t
+    var_index: byte = 0;
+    // For BinaryOp nodes
+    binary_op: BinaryOperator;
+    left: ASTNode;
+    right: ASTNode;
+    // For UnaryOp / FunctionCall nodes
+    unary_op: UnaryOperator;
+    operand: ASTNode;
+    // For multi-arg FunctionCall (e.g., atan2, clamp)
+    function_name: string;
+    arguments: [ASTNode];
+}
+
+table ASTTree {
+    root: ASTNode;
+    node_count: uint32;
+    depth: uint32;
+    // Metadata
+    source_equation: string;
+    latex: string;
+    complexity_score: float32;
+    fitness_score: float32;
+}
+
+table ASTPopulation {
+    generation: uint32;
+    trees: [ASTTree];
+    best_fitness: float32;
+    mean_fitness: float32;
+}
+
+root_type ASTTree;

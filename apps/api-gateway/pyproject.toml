@@ -1,0 +1,26 @@
+[project]
+name = "pixmath-api-gateway"
+version = "0.1.0"
+description = "Hybrid BFF: FastAPI REST uploads + Strawberry GraphQL + WebSocket pub/sub"
+requires-python = ">=3.11,<3.14"
+license = { text = "MIT" }
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "strawberry-graphql[fastapi]>=0.243",
+    "python-multipart>=0.0.12",
+    "aio-pika>=9.4",
+    "redis[hiredis]>=5.1",
+    "httpx>=0.27",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "pixmath-core",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

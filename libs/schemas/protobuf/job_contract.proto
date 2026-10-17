@@ -1,0 +1,108 @@
+// PixMath Job Contract — Protobuf Schema
+// Used for microservice communication between API gateway and workers.
+
+syntax = "proto3";
+
+package pixmath.jobs;
+
+option python_generic_services = true;
+
+// ── Enums ─────────────────────────────────────────────────────────────────
+
+enum JobType {
+    JOB_TYPE_UNSPECIFIED = 0;
+    JOB_TYPE_FORWARD_RENDER = 1;
+    JOB_TYPE_REVERSE_EXTRACT = 2;
+}
+
+enum JobStatus {
+    JOB_STATUS_UNSPECIFIED = 0;
+    JOB_STATUS_QUEUED = 1;
+    JOB_STATUS_PROCESSING = 2;
+    JOB_STATUS_COMPLETED = 3;
+    JOB_STATUS_FAILED = 4;
+    JOB_STATUS_CANCELLED = 5;
+}
+
+enum ImageFormat {
+    IMAGE_FORMAT_PNG = 0;
+    IMAGE_FORMAT_JPEG = 1;
+    IMAGE_FORMAT_WEBP = 2;
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────
+
+message RenderJobRequest {
+    string job_id = 1;
+    string equation = 2;
+    int32 width = 3;
+    int32 height = 4;
+    float time = 5;
+    ImageFormat format = 6;
+    map<string, string> metadata = 7;
+}
+
+message ExtractJobRequest {
+    string job_id = 1;
+    string image_url = 2;
+    bytes image_data = 3;
+    // Neural representation config
+    string model_type = 4;  // "siren" or "kan"
+    int32 siren_epochs = 5;
+    float siren_lr = 6;
+    float siren_omega_0 = 7;
+    // Symbolic regression config
+    int32 pysr_niterations = 8;
+    int32 pysr_populations = 9;
+    int32 pysr_maxsize = 10;
+}
+
+message JobProgress {
+    string job_id = 1;
+    JobStatus status = 2;
+    float progress_percent = 3;
+    string phase = 4;           // "validation", "transpilation", "rendering", "training", "regression", "selection"
+    string message = 5;
+    // Metrics (for reverse jobs)
+    float current_psnr = 6;
+    float current_ssim = 7;
+    int32 current_epoch = 8;
+    int32 total_epochs = 9;
+    // Intermediate results
+    string intermediate_equation = 10;
+    string intermediate_latex = 11;
+}
+
+message RenderJobResult {
+    string job_id = 1;
+    JobStatus status = 2;
+    string image_url = 3;
+    bytes image_data = 4;
+    int32 width = 5;
+    int32 height = 6;
+    float render_time_ms = 7;
+    string error_message = 8;
+}
+
+message ExtractJobResult {
+    string job_id = 1;
+    JobStatus status = 2;
+    // Best equation (Pareto elbow)
+    string equation = 3;
+    string latex = 4;
+    float complexity = 5;
+    float psnr = 6;
+    float ssim = 7;
+    // Full Pareto front
+    repeated ParetoPoint pareto_front = 8;
+    string error_message = 9;
+    float total_time_sec = 10;
+}
+
+message ParetoPoint {
+    string equation = 1;
+    string latex = 2;
+    float complexity = 3;
+    float loss = 4;
+    float psnr = 5;
+}

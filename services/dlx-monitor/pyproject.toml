@@ -1,0 +1,21 @@
+[project]
+name = "pixmath-dlx-monitor"
+version = "0.1.0"
+description = "Dead-Letter Exchange monitor: observes failed jobs, emits telemetry, and triggers retries"
+requires-python = ">=3.11,<3.14"
+license = { text = "MIT" }
+
+dependencies = [
+    "aio-pika>=9.4",
+    "redis[hiredis]>=5.1",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "structlog>=24.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

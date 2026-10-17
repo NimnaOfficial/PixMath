@@ -1,0 +1,23 @@
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_SYSTEM_PYTHON=1
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+COPY libs/math-core/pyproject.toml /app/libs/math-core/pyproject.toml
+COPY services/reverse-worker/pyproject.toml /app/services/reverse-worker/pyproject.toml
+COPY pyproject.toml uv.lock /app/
+
+RUN uv sync --frozen --no-dev --package pixmath-reverse-worker
+
+COPY libs/math-core/ /app/libs/math-core/
+COPY services/reverse-worker/ /app/services/reverse-worker/
+
+# Reverse worker needs Julia for PySR
+RUN uv run --package pixmath-reverse-worker python -c "import pysr; pysr.install()" || true
+
+CMD ["uv", "run", "--package", "pixmath-reverse-worker", "python", "-m", "app.worker"]

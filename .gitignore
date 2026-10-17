@@ -1,0 +1,69 @@
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+.eggs/
+
+# ── Virtual Environments ──────────────────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+
+# ── uv ────────────────────────────────────────────────────────────────────
+# Keep uv.lock committed for reproducibility
+
+# ── IDE ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.history/
+
+# ── Environment ──────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── OS ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── Testing & Coverage ──────────────────────────────────────────────────
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Node / Web Studio ───────────────────────────────────────────────────
+node_modules/
+apps/web-studio/dist/
+apps/web-studio/.turbo/
+*.tsbuildinfo
+
+# ── Docker ───────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Renders & Outputs ───────────────────────────────────────────────────
+output/
+renders/
+*.png
+*.jpg
+*.jpeg
+!docs/**/*.png
+
+# ── Generated schemas ───────────────────────────────────────────────────
+libs/schemas/generated/
+
+# ── Misc ─────────────────────────────────────────────────────────────────
+*.log
+*.bak
+*.tmp

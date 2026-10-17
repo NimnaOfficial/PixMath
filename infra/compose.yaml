@@ -1,0 +1,96 @@
+# PixMath Local Development Stack
+# Usage: docker compose -f infra/compose.yaml up -d
+
+services:
+  # ── Message Broker ─────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: pixmath-rabbitmq
+    hostname: pixmath-rabbitmq
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: pixmath
+      RABBITMQ_DEFAULT_PASS: pixmath
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Cache & Pub/Sub ────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: pixmath-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Relational Database ───────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: pixmath-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: pixmath
+      POSTGRES_PASSWORD: pixmath
+      POSTGRES_DB: pixmath
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pixmath"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Object Storage (S3-compatible) ────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: pixmath-minio
+    ports:
+      - "9000:9000"    # API
+      - "9001:9001"    # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO Init (create default bucket) ────────────────────────────────
+  minio-init:
+    image: minio/mc:latest
+    container_name: pixmath-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set pixmath http://minio:9000 minioadmin minioadmin &&
+      mc mb --ignore-existing pixmath/pixmath-renders &&
+      mc anonymous set download pixmath/pixmath-renders &&
+      echo 'Bucket pixmath-renders created successfully'
+      "
+
+volumes:
+  rabbitmq_data:
+  redis_data:
+  postgres_data:
+  minio_data:

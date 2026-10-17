@@ -1,0 +1,32 @@
+FROM python:3.11-slim AS base
+
+# System deps for headless EGL rendering
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libegl1-mesa-dev \
+    libgles2-mesa-dev \
+    libgl1-mesa-dri \
+    libglvnd0 \
+    libglvnd-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_SYSTEM_PYTHON=1
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+# Install deps first for caching
+COPY libs/math-core/pyproject.toml /app/libs/math-core/pyproject.toml
+COPY services/forward-worker/pyproject.toml /app/services/forward-worker/pyproject.toml
+COPY pyproject.toml uv.lock /app/
+
+RUN uv sync --frozen --no-dev --package pixmath-forward-worker
+
+# Copy source
+COPY libs/math-core/ /app/libs/math-core/
+COPY services/forward-worker/ /app/services/forward-worker/
+
+# cgroup memory constraints: 512MB
+CMD ["uv", "run", "--package", "pixmath-forward-worker", "python", "-m", "app.worker"]
