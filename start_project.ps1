@@ -18,16 +18,33 @@ if (!(Test-Path $LogsDir)) {
     New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
 }
 
+$EnvFile = "$RootPath\.env"
+$EnvExample = "$RootPath\.env.example"
+if (!(Test-Path $EnvFile) -and (Test-Path $EnvExample)) {
+    Write-Host "[+] Generating .env from .env.example..." -ForegroundColor Cyan
+    Copy-Item $EnvExample $EnvFile
+}
+
 $env:PYTHONPATH = "$RootPath\libs\math-core;$RootPath\apps\api-gateway;$RootPath\services\forward-worker;$RootPath\services\reverse-worker;$RootPath\services\dlx-monitor;$RootPath\apps\cli"
 $PythonExe = "python"
+if (Test-Path "$RootPath\.venv\Scripts\python.exe") {
+    $PythonExe = "$RootPath\.venv\Scripts\python.exe"
+}
 
 # Verify python
 try {
     $pyVer = & $PythonExe --version 2>&1
-    Write-Host "[OK] Python: $pyVer" -ForegroundColor Green
+    Write-Host "[OK] Python: $pyVer (using $PythonExe)" -ForegroundColor Green
 } catch {
-    Write-Host "[ERR] Python not found in PATH." -ForegroundColor Red
+    Write-Host "[ERR] Python not found. Please install Python 3.11+ or run 'uv sync'." -ForegroundColor Red
     exit 1
+}
+
+# Verify / install frontend node_modules
+$WebModules = "$RootPath\apps\web-studio\node_modules"
+if (!(Test-Path $WebModules)) {
+    Write-Host "[+] Installing Web Studio frontend dependencies (npm install)..." -ForegroundColor Cyan
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "npm", "--prefix", "apps/web-studio", "install" -Wait -NoNewWindow
 }
 
 # 2. Check & Launch Docker Infrastructure (Optional / Non-blocking)

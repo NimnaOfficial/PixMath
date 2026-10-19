@@ -67,3 +67,6 @@ libs/schemas/generated/
 *.log
 *.bak
 *.tmp
+logs/
+.pixmath_services.json
+

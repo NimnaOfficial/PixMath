@@ -288,16 +288,23 @@ class GLSLTranspiler(ast.NodeVisitor):
 # Public API
 # ---------------------------------------------------------------------------
 
-def transpile(expr_ast: ast.Expression) -> str:
-    """Convert a validated Python AST into a complete GLSL fragment shader.
+def transpile(expr: ast.Expression | str) -> str:
+    """Convert a validated Python AST or math expression string into a complete GLSL fragment shader.
 
     Parameters:
-        expr_ast: A validated :class:`ast.Expression` (from :func:`app.sandbox.validate`).
+        expr: A validated :class:`ast.Expression` or expression string.
 
     Returns:
         A ``#version 330 core`` GLSL fragment shader source string ready
         to be compiled and rendered.
     """
+    if isinstance(expr, str):
+        from app.sandbox.ast_validator import validate
+        expr_ast = validate(expr)
+    else:
+        expr_ast = expr
+
     transpiler = GLSLTranspiler()
     glsl_expr = transpiler.transpile_expression(expr_ast)
     return f"{_SHADER_HEADER}{_SHADER_MAIN_PREFIX}{glsl_expr}{_SHADER_MAIN_SUFFIX}"
+

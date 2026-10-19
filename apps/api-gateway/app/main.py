@@ -16,6 +16,7 @@ import aio_pika
 import redis.asyncio as aioredis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 from strawberry.fastapi import GraphQLRouter
 
@@ -36,10 +37,16 @@ class GatewaySettings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     cors_origins: list[str] = ["*"]
-    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
-    redis_url: str = "redis://localhost:6379/0"
+    rabbitmq_url: str = Field(
+        default="amqp://pixmath:pixmath@localhost:5672/",
+        validation_alias=AliasChoices("RABBITMQ_URL", "PIXMATH_RABBITMQ_URL"),
+    )
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        validation_alias=AliasChoices("REDIS_URL", "PIXMATH_REDIS_URL"),
+    )
 
-    model_config = {"env_prefix": "PIXMATH_"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = GatewaySettings()
