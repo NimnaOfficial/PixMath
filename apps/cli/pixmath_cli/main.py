@@ -21,6 +21,8 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from pixmath_cli import __version__
+
 if sys.platform == "win32":
     if hasattr(sys.stdout, "reconfigure"):
         try:
@@ -201,17 +203,21 @@ def render(
 
         if use_gpu:
             try:
-                # Attempt GPU path — import locally to avoid hard dep.
-                from services.forward_worker.app.transpiler.ast_to_glsl import (  # type: ignore[import-untyped]
-                    transpile,
-                )
-                from services.forward_worker.app.egl_renderer.headless_gl import (  # type: ignore[import-untyped]
-                    HeadlessRenderer,
-                )
+                try:
+                    from app.transpiler.ast_to_glsl import transpile
+                    from app.egl_renderer.headless_gl import HeadlessRenderer
+                except ImportError:
+                    from services.forward_worker.app.transpiler.ast_to_glsl import (  # type: ignore[import-not-found]
+                        transpile,
+                    )
+                    from services.forward_worker.app.egl_renderer.headless_gl import (  # type: ignore[import-not-found]
+                        HeadlessRenderer,
+                    )
 
                 glsl_src = transpile(eq)
-                renderer = HeadlessRenderer(width, height)
-                pixels = renderer.render(glsl_src, t=time_val)
+                with HeadlessRenderer() as renderer:
+                    rendered_img = renderer.render(glsl_src, width=width, height=height, time=time_val)
+                    pixels = np.array(rendered_img)
             except Exception as exc:
                 console.print(
                     f"[yellow]GPU render failed ({exc}), falling back to CPU.[/yellow]"

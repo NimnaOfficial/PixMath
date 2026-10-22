@@ -21,6 +21,7 @@ from aio_pika.abc import (
     AbstractIncomingMessage,
     AbstractQueue,
 )
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 # ---------------------------------------------------------------------------
@@ -50,23 +51,24 @@ log: structlog.stdlib.BoundLogger = structlog.get_logger("dlx-monitor")  # type:
 # ---------------------------------------------------------------------------
 
 class DLXMonitorSettings(BaseSettings):
-    """Configuration for the DLX monitor, loaded from environment variables.
+    """Configuration for the DLX monitor, loaded from environment variables."""
 
-    Attributes:
-        rabbitmq_url: AMQP connection string.
-        dlx_exchange: Name of the dead-letter exchange to bind to.
-        dlx_queue: Queue bound to the DLX for consuming dead-lettered msgs.
-        max_retries: Maximum number of times to re-queue a failed message.
-        retry_enabled: Whether automatic retry is turned on.
-    """
-
-    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
-    dlx_exchange: str = "pixmath.dlx"
-    dlx_queue: str = "pixmath.dlx.queue"
+    rabbitmq_url: str = Field(
+        default="amqp://pixmath:pixmath@localhost:5672/",
+        validation_alias=AliasChoices("RABBITMQ_URL", "DLX_RABBITMQ_URL"),
+    )
+    dlx_exchange: str = Field(
+        default="pixmath.dlx",
+        validation_alias=AliasChoices("RABBITMQ_DLX_EXCHANGE", "DLX_EXCHANGE"),
+    )
+    dlx_queue: str = Field(
+        default="pixmath.dlx.queue",
+        validation_alias=AliasChoices("RABBITMQ_DLX_QUEUE", "DLX_QUEUE"),
+    )
     max_retries: int = 3
     retry_enabled: bool = True
 
-    model_config = {"env_prefix": "DLX_"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 # ---------------------------------------------------------------------------

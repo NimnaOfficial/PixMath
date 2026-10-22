@@ -6,7 +6,7 @@ requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
 
 dependencies = [
-    "typer[all]>=0.12",
+    "typer>=0.12",
     "rich>=13.7",
     "Pillow>=10.4",
     "numpy>=1.26,<3",

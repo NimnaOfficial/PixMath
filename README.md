@@ -86,21 +86,34 @@ pixmath/
 
 Run the entire platform (Frontend + API Gateway + Workers + Infrastructure):
 
+**On Ubuntu / Linux / macOS:**
+```bash
+chmod +x start_project.sh stop_project.sh  # First time only
+./start_project.sh
+```
+
+**On Windows 11 (PowerShell or CMD):**
 ```powershell
 # In PowerShell:
 .\start_project.ps1
 
-# Or from Windows CMD:
+# Or from Windows Command Prompt:
 start_project.cmd
 ```
 
 To stop all services cleanly and free ports 8000 and 5173:
 
+**On Ubuntu / Linux / macOS:**
+```bash
+./stop_project.sh
+```
+
+**On Windows 11 (PowerShell or CMD):**
 ```powershell
 # In PowerShell:
 .\stop_project.ps1
 
-# Or from Windows CMD:
+# Or from Windows Command Prompt:
 stop_project.cmd
 ```
 
@@ -119,7 +132,7 @@ Starts RabbitMQ (5672), Redis (6379), PostgreSQL (5432), and MinIO (9000).
 ### 2. Python Workspace Setup
 
 ```bash
-uv sync
+uv sync --all-packages
 ```
 
 ### 3. Running the PixMath CLI

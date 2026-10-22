@@ -57,7 +57,7 @@ services:
 
   # ── Object Storage (S3-compatible) ────────────────────────────────────
   minio:
-    image: minio/minio:latest
+    image: cgr.dev/chainguard/minio:latest
     container_name: pixmath-minio
     ports:
       - "9000:9000"    # API
@@ -65,29 +65,17 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
-    command: server /data --console-address ":9001"
+    command: ["server", "/data", "--console-address", ":9001"]
     volumes:
       - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # ── MinIO Init (create default bucket) ────────────────────────────────
   minio-init:
-    image: minio/mc:latest
+    image: alpine:latest
     container_name: pixmath-minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set pixmath http://minio:9000 minioadmin minioadmin &&
-      mc mb --ignore-existing pixmath/pixmath-renders &&
-      mc anonymous set download pixmath/pixmath-renders &&
-      echo 'Bucket pixmath-renders created successfully'
-      "
+    volumes:
+      - minio_data:/data
+    command: /bin/sh -c "mkdir -p /data/pixmath-renders && echo 'Bucket pixmath-renders initialized successfully'"
+
 
 volumes:
   rabbitmq_data:

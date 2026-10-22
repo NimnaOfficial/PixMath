@@ -28,7 +28,7 @@ from typing import Any, Final
 
 import aio_pika
 import structlog
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 from app.egl_renderer import HeadlessRenderer
@@ -65,31 +65,25 @@ log: structlog.stdlib.BoundLogger = structlog.get_logger()  # type: ignore[assig
 class ForwardWorkerSettings(BaseSettings):
     """Configuration for the forward rendering worker.
 
-    Values are read from environment variables (prefix ``FW_``) or from a
-    ``.env`` file in the working directory.
-
-    Attributes:
-        rabbitmq_url:    AMQP connection URL.
-        queue_name:      RabbitMQ queue to consume from.
-        render_timeout:  Maximum seconds allowed per render job.
-        output_dir:      Directory where rendered images are saved.
-        render_width:    Default render width in pixels.
-        render_height:   Default render height in pixels.
-        prefetch_count:  RabbitMQ QoS prefetch count.
+    Values are read from environment variables or from a ``.env`` file
+    in the working directory.
     """
 
-    model_config = {"env_prefix": "FW_", "env_file": ".env", "extra": "ignore"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
     rabbitmq_url: str = Field(
-        default="amqp://guest:guest@localhost:5672/",
+        default="amqp://pixmath:pixmath@localhost:5672/",
+        validation_alias=AliasChoices("RABBITMQ_URL", "FW_RABBITMQ_URL"),
         description="AMQP connection URL for RabbitMQ.",
     )
     queue_name: str = Field(
         default="forward_jobs",
+        validation_alias=AliasChoices("RABBITMQ_FORWARD_QUEUE", "FW_QUEUE_NAME"),
         description="Queue name to consume rendering jobs from.",
     )
     render_timeout: float = Field(
         default=30.0,
+        validation_alias=AliasChoices("FORWARD_RENDER_TIMEOUT_SEC", "FW_RENDER_TIMEOUT"),
         description="Maximum seconds allowed for a single render job.",
     )
     output_dir: str = Field(

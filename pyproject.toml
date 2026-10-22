@@ -18,6 +18,13 @@ members = [
     "services/dlx-monitor",
 ]
 
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+pixmath-core = { workspace = true }
+pixmath-schemas = { workspace = true }
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -52,6 +59,14 @@ disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = [
+    "libs/math-core",
+    "apps/cli",
+    "apps/api-gateway",
+    "services/forward-worker",
+    "services/reverse-worker",
+    "services/dlx-monitor",
+]
 asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
