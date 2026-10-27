@@ -191,43 +191,51 @@ async def main() -> None:
         max_retries=settings.max_retries,
     )
 
-    connection = await aio_pika.connect_robust(settings.rabbitmq_url)
-    log.info("rabbitmq_connected")
+    try:
+        connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+        log.info("rabbitmq_connected")
 
-    async with connection:
-        channel: AbstractChannel = await connection.channel()
-        await channel.set_qos(prefetch_count=10)
+        async with connection:
+            channel: AbstractChannel = await connection.channel()
+            await channel.set_qos(prefetch_count=10)
 
-        # Declare the DLX exchange and queue.
-        dlx_exchange = await channel.declare_exchange(
-            settings.dlx_exchange,
-            aio_pika.ExchangeType.FANOUT,
-            durable=True,
-        )
+            # Declare the DLX exchange and queue.
+            dlx_exchange = await channel.declare_exchange(
+                settings.dlx_exchange,
+                aio_pika.ExchangeType.FANOUT,
+                durable=True,
+            )
 
-        dlx_queue: AbstractQueue = await channel.declare_queue(
-            settings.dlx_queue,
-            durable=True,
-        )
-        await dlx_queue.bind(dlx_exchange)
+            dlx_queue: AbstractQueue = await channel.declare_queue(
+                settings.dlx_queue,
+                durable=True,
+            )
+            await dlx_queue.bind(dlx_exchange)
 
-        log.info(
-            "dlx_queue_bound",
-            exchange=settings.dlx_exchange,
-            queue=settings.dlx_queue,
-        )
+            log.info(
+                "dlx_queue_bound",
+                exchange=settings.dlx_exchange,
+                queue=settings.dlx_queue,
+            )
 
-        # Consume messages.
-        async with dlx_queue.iterator() as queue_iter:
-            log.info("consuming_dead_letters")
-            async for message in queue_iter:
-                try:
-                    await _handle_dead_letter(message, settings, channel)
-                except Exception:
-                    log.exception(
-                        "handler_error",
-                        message_id=message.message_id,
-                    )
+            # Consume messages.
+            async with dlx_queue.iterator() as queue_iter:
+                log.info("consuming_dead_letters")
+                async for message in queue_iter:
+                    try:
+                        await _handle_dead_letter(message, settings, channel)
+                    except Exception:
+                        log.exception(
+                            "handler_error",
+                            message_id=message.message_id,
+                        )
+    except Exception as exc:
+        log.warning("rabbitmq_offline_standalone", error=str(exc))
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                break
 
 
 # ---------------------------------------------------------------------------

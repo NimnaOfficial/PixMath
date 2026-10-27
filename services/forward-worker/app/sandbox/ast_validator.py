@@ -147,6 +147,9 @@ DEFAULT_MAX_DEPTH: Final[int] = 32
 #: Default maximum node count.
 DEFAULT_MAX_NODES: Final[int] = 2000
 
+#: Default maximum raw expression length.
+DEFAULT_MAX_EXPR_LENGTH: Final[int] = 4096
+
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -384,6 +387,7 @@ def validate(
     *,
     max_depth: int = DEFAULT_MAX_DEPTH,
     max_nodes: int = DEFAULT_MAX_NODES,
+    max_length: int = DEFAULT_MAX_EXPR_LENGTH,
 ) -> ast.Expression:
     """Parse and security-validate a math expression string.
 
@@ -391,6 +395,7 @@ def validate(
         expr_string: The raw math expression (e.g. ``"sin(x) + cos(y)"``).
         max_depth:   Maximum allowed AST nesting depth.
         max_nodes:   Maximum allowed total AST node count.
+        max_length:  Maximum allowed raw character length.
 
     Returns:
         The validated :class:`ast.Expression` tree, ready for transpilation.
@@ -408,14 +413,21 @@ def validate(
     if not expr_string:
         raise ASTSecurityError("Expression string is empty.")
 
+    # --- Pre-parse guards against parser DoS --------------------------------
+    if len(expr_string) > max_length:
+        raise ASTSecurityError(
+            f"Expression length ({len(expr_string)}) exceeds maximum limit of {max_length} characters."
+        )
+
+    import re
+    if re.search(r"[-+~]{16,}", expr_string):
+        raise ASTSecurityError("Excessive consecutive unary operators detected.")
+
     # --- Parse ---------------------------------------------------------------
     try:
         tree = ast.parse(expr_string, mode="eval")
-    except SyntaxError as exc:
-        raise ASTSecurityError(
-            f"Syntax error in expression: {exc.msg} "
-            f"(line {exc.lineno}, col {exc.offset})."
-        ) from exc
+    except (SyntaxError, RecursionError, MemoryError) as exc:
+        raise ASTSecurityError(f"Cannot safely parse expression: {exc}") from exc
 
     # --- Validate ------------------------------------------------------------
     validator = SecurityASTValidator(max_depth=max_depth, max_nodes=max_nodes)

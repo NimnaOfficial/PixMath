@@ -30,10 +30,22 @@ export function parameterizeFormula(formula: string): {
   let parameterized = '';
 
   while ((match = numberRegex.exec(formula)) !== null && slotIndex < 64) {
-    const raw = match[0];
-    const val = parseFloat(raw);
-    const start = match.index;
+    let raw = match[0];
+    let start = match.index;
     const end = start + raw.length;
+
+    // Distinguish between binary subtraction and unary negative literal
+    if (raw.startsWith('-')) {
+      const before = formula.substring(0, start).trimEnd();
+      const lastChar = before.slice(-1);
+      // If preceded by identifier, closing paren/bracket, or digit, it's binary subtraction
+      if (lastChar && /[a-zA-Z0-9_)\]]/.test(lastChar)) {
+        start += 1;
+        raw = raw.substring(1);
+      }
+    }
+
+    const val = parseFloat(raw);
 
     // Check if this number is not an exponent or part of identifier
     mappings.push({

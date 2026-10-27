@@ -36,7 +36,12 @@ class GatewaySettings(BaseSettings):
 
     host: str = "0.0.0.0"
     port: int = 8000
-    cors_origins: list[str] = ["*"]
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
     rabbitmq_url: str = Field(
         default="amqp://pixmath:pixmath@localhost:5672/",
         validation_alias=AliasChoices("RABBITMQ_URL", "PIXMATH_RABBITMQ_URL"),
@@ -123,10 +128,11 @@ def create_app() -> FastAPI:
     )
 
     # -- CORS -------------------------------------------------------------
+    allow_all = "*" in settings.cors_origins
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        allow_credentials=not allow_all,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -134,7 +140,6 @@ def create_app() -> FastAPI:
     # -- GraphQL ----------------------------------------------------------
     graphql_app: GraphQLRouter = GraphQLRouter(  # type: ignore[type-arg]
         schema,
-        path="/graphql",
     )
     application.include_router(graphql_app, prefix="/graphql")
 

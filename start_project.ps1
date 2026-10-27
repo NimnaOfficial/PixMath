@@ -25,10 +25,39 @@ if (!(Test-Path $EnvFile) -and (Test-Path $EnvExample)) {
     Copy-Item $EnvExample $EnvFile
 }
 
-$env:PYTHONPATH = "$RootPath\libs\math-core;$RootPath\apps\api-gateway;$RootPath\services\forward-worker;$RootPath\services\reverse-worker;$RootPath\services\dlx-monitor;$RootPath\apps\cli"
-$PythonExe = "python"
+$env:PYTHONPATH = "$RootPath\libs\math-core;$RootPath\libs\schemas;$RootPath\apps\api-gateway;$RootPath\services\forward-worker;$RootPath\services\reverse-worker;$RootPath\services\dlx-monitor;$RootPath\apps\cli"
+
+# Python Interpreter Detection & Validation
+$PythonExe = ""
+$hasUv = (Get-Command uv -ErrorAction SilentlyContinue) -ne $null
+
+# 1. Prefer .venv if populated
 if (Test-Path "$RootPath\.venv\Scripts\python.exe") {
-    $PythonExe = "$RootPath\.venv\Scripts\python.exe"
+    $testVenv = & "$RootPath\.venv\Scripts\python.exe" -c "import aio_pika, uvicorn; print('OK')" 2>$null
+    if ($testVenv -like "*OK*") {
+        $PythonExe = "$RootPath\.venv\Scripts\python.exe"
+    } elseif ($hasUv) {
+        Write-Host "[+] Populating workspace virtual environment with uv sync --all-packages..." -ForegroundColor Cyan
+        & uv sync --all-packages
+        $testVenvAfter = & "$RootPath\.venv\Scripts\python.exe" -c "import aio_pika, uvicorn; print('OK')" 2>$null
+        if ($testVenvAfter -like "*OK*") {
+            $PythonExe = "$RootPath\.venv\Scripts\python.exe"
+        }
+    }
+}
+
+# 2. Fall back to system python if valid
+if ([string]::IsNullOrEmpty($PythonExe)) {
+    $testSys = & python -c "import aio_pika, uvicorn; print('OK')" 2>$null
+    if ($testSys -like "*OK*") {
+        $PythonExe = "python"
+    } elseif ($hasUv) {
+        Write-Host "[+] Initialising .venv via uv sync --all-packages..." -ForegroundColor Cyan
+        & uv sync --all-packages
+        $PythonExe = "$RootPath\.venv\Scripts\python.exe"
+    } else {
+        $PythonExe = "python"
+    }
 }
 
 # Verify python
@@ -67,6 +96,7 @@ try {
 $Services = @{
     Gateway = $null
     ForwardWorker = $null
+    ReverseWorker = $null
     DLXMonitor = $null
     WebStudio = $null
 }
@@ -75,7 +105,7 @@ $Services = @{
 Write-Host "[+] Starting PixMath API Gateway (Port 8000)..." -ForegroundColor Cyan
 $gatewayProc = Start-Process -FilePath $PythonExe `
     -ArgumentList "-m", "uvicorn", "app.main:create_app", "--factory", "--host", "127.0.0.1", "--port", "8000" `
-    -WorkingDirectory $RootPath `
+    -WorkingDirectory "$RootPath\apps\api-gateway" `
     -RedirectStandardOutput "$LogsDir\gateway.log" `
     -RedirectStandardError "$LogsDir\gateway.err.log" `
     -PassThru -WindowStyle Hidden
@@ -84,24 +114,34 @@ $Services.Gateway = $gatewayProc.Id
 # 4. Launch Forward Worker
 Write-Host "[+] Starting Forward Worker..." -ForegroundColor Cyan
 $fwdProc = Start-Process -FilePath $PythonExe `
-    -ArgumentList "services/forward-worker/app/worker.py" `
-    -WorkingDirectory $RootPath `
+    -ArgumentList "-m", "app.worker" `
+    -WorkingDirectory "$RootPath\services\forward-worker" `
     -RedirectStandardOutput "$LogsDir\forward_worker.log" `
     -RedirectStandardError "$LogsDir\forward_worker.err.log" `
     -PassThru -WindowStyle Hidden
 $Services.ForwardWorker = $fwdProc.Id
 
-# 5. Launch DLX Monitor
+# 5. Launch Reverse Worker
+Write-Host "[+] Starting Reverse Worker..." -ForegroundColor Cyan
+$revProc = Start-Process -FilePath $PythonExe `
+    -ArgumentList "-m", "app.worker" `
+    -WorkingDirectory "$RootPath\services\reverse-worker" `
+    -RedirectStandardOutput "$LogsDir\reverse_worker.log" `
+    -RedirectStandardError "$LogsDir\reverse_worker.err.log" `
+    -PassThru -WindowStyle Hidden
+$Services.ReverseWorker = $revProc.Id
+
+# 6. Launch DLX Monitor
 Write-Host "[+] Starting DLX Monitor..." -ForegroundColor Cyan
 $dlxProc = Start-Process -FilePath $PythonExe `
-    -ArgumentList "services/dlx-monitor/app/telemetry.py" `
-    -WorkingDirectory $RootPath `
+    -ArgumentList "-m", "app.telemetry" `
+    -WorkingDirectory "$RootPath\services\dlx-monitor" `
     -RedirectStandardOutput "$LogsDir\dlx_monitor.log" `
     -RedirectStandardError "$LogsDir\dlx_monitor.err.log" `
     -PassThru -WindowStyle Hidden
 $Services.DLXMonitor = $dlxProc.Id
 
-# 6. Launch Web Studio Frontend (React 19 + WebGL2 on Port 5173)
+# 7. Launch Web Studio Frontend (React 19 + WebGL2 on Port 5173)
 Write-Host "[+] Starting PixMath Web Studio (Port 5173)..." -ForegroundColor Cyan
 $webProc = Start-Process -FilePath "cmd.exe" `
     -ArgumentList "/c", "npm", "--prefix", "apps/web-studio", "run", "dev" `
@@ -114,7 +154,7 @@ $Services.WebStudio = $webProc.Id
 # Save PIDs to file for clean shutdown
 $Services | ConvertTo-Json | Out-File -FilePath "$RootPath\.pixmath_services.json" -Encoding utf8
 
-# 7. Health Check Verification
+# 8. Health Check Verification
 Write-Host "[+] Verifying service availability..." -ForegroundColor Cyan
 $retries = 6
 $gatewayReady = $false

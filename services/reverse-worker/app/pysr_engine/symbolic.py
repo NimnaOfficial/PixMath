@@ -67,9 +67,13 @@ class PySRResult:
 
 
 def _make_coord_grid(resolution: int) -> NDArray[np.float32]:
-    """Return a ``(resolution**2, 2)`` array of normalised ``[-1, 1]`` coords."""
+    """Return a ``(resolution**2, 2)`` array of normalised ``[-1, 1]`` coords.
+
+    Aligns with SIREN / KAN coordinate conventions:
+    Column 0 is horizontal x (column index), Column 1 is vertical y (row index).
+    """
     lin = np.linspace(-1.0, 1.0, resolution, dtype=np.float32)
-    gx, gy = np.meshgrid(lin, lin, indexing="ij")
+    gy, gx = np.meshgrid(lin, lin, indexing="ij")
     return np.stack([gx.ravel(), gy.ravel()], axis=-1)
 
 

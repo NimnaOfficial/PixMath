@@ -138,6 +138,25 @@ float noise(float v) {
     return mix(_hash(vec2(i, 0.0)), _hash(vec2(i + 1.0, 0.0)), f);
 }
 
+// 2D Value Noise with cubic Hermite smoothstep interpolation
+float noise(vec2 st) {
+    vec2 i = floor(st);
+    vec2 f = fract(st);
+
+    float a = _hash(i);
+    float b = _hash(i + vec2(1.0, 0.0));
+    float c = _hash(i + vec2(0.0, 1.0));
+    float d = _hash(i + vec2(1.0, 1.0));
+
+    vec2 u = f * f * (3.0 - 2.0 * f);
+
+    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+float noise(float x, float y) {
+    return noise(vec2(x, y));
+}
+
 float length(float v) {
     return abs(v);
 }

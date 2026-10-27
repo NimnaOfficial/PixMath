@@ -78,8 +78,17 @@ def _cpu_eval(equation: str, width: int, height: int, t: float) -> np.ndarray:
     Returns:
         RGBA uint8 ndarray of shape ``(height, width, 4)``.
     """
+    # 1. Enforce AST Security Policy
+    from pixmath_core.sandbox import ASTSecurityError, validate
+
+    try:
+        validate(equation)
+    except ASTSecurityError as exc:
+        console.print(f"[red]Security error in equation:[/red] {exc.detail}")
+        raise typer.Exit(code=1) from exc
+
     xs = np.linspace(-1.0, 1.0, width, dtype=np.float32)
-    ys = np.linspace(-1.0, 1.0, height, dtype=np.float32)
+    ys = np.linspace(1.0, -1.0, height, dtype=np.float32)
     x, y = np.meshgrid(xs, ys)  # noqa: F841 — used inside eval
 
     # Import shared math-core noise

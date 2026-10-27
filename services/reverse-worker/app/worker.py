@@ -64,32 +64,58 @@ class ReverseWorker:
 
     async def emit_progress(self, job_id: str, phase: str, progress: float, **extra: Any) -> None:
         """Publish real-time telemetry to Redis PubSub."""
+        status_name = "completed" if phase == "completed" else "processing"
         payload = {
             "job_id": job_id,
             "phase": phase,
+            "status": status_name,
             "progress_percent": progress,
+            "progress": round(progress / 100.0, 2),
             **extra,
         }
         logger.info("Progress [%s]: %s (%.1f%%)", job_id, phase, progress)
         if self._redis_client:
             try:
-                channel = f"{self.settings.redis_pubsub_channel}:{job_id}"
-                await self._redis_client.publish(channel, json.dumps(payload))
+                # 1. Publish to reverse events channel
+                channel1 = f"{self.settings.redis_pubsub_channel}:{job_id}"
+                await self._redis_client.publish(channel1, json.dumps(payload))
+                # 2. Publish to gateway websocket channel
+                channel2 = f"job:{job_id}:progress"
+                await self._redis_client.publish(channel2, json.dumps(payload))
+                # 3. Update redis status key
+                await self._redis_client.set(
+                    f"job:{job_id}:status",
+                    json.dumps({
+                        "status": status_name,
+                        "progress": round(progress / 100.0, 2),
+                    }),
+                    ex=86400,
+                )
             except Exception as exc:
                 logger.debug("Failed publishing Redis event: %s", exc)
 
     async def process_job(self, job_data: dict[str, Any]) -> dict[str, Any]:
         """
         Executes the reverse extraction pipeline with strict 512MB RAM hygiene:
-        1. Lazy loads torch and trains SIREN
-        2. Explicit tensor deletion and forced gc.collect()
-        3. Lazy loads PySR and executes symbolic regression
-        4. Selects Pareto elbow and formats output
+        1. Loads target image (from raw bytes, base64, or URL)
+        2. Fits an Implicit Neural Representation (SIREN or KAN)
+        3. Memory cleanup (forced gc.collect)
+        4. Distills into symbolic closed-form equations via PySR
+        5. Selects Pareto elbow and formats output
         """
         job_id = job_data.get("job_id", "unknown")
         model_type = job_data.get("model_type", "siren").lower()
         image_bytes = job_data.get("image_data")
         image_url = job_data.get("image_url")
+        image_b64 = job_data.get("image_b64")
+
+        # Handle base64 payload from Gateway
+        if not image_bytes and image_b64:
+            try:
+                import base64
+                image_bytes = base64.b64decode(image_b64)
+            except Exception as exc:
+                logger.warning("Failed decoding image_b64: %s", exc)
 
         await self.emit_progress(job_id, "ingestion", 5.0, message="Loading target image")
 
@@ -157,12 +183,44 @@ class ReverseWorker:
 
         await self.emit_progress(job_id, "pareto_selection", 90.0, message="Selecting Pareto elbow formula")
 
-        # 5. Pareto Elbow Selection
+        # 5. Pareto Elbow Selection (channel-aware)
         from app.pareto.selector import find_pareto_elbow
-        elbow_idx = find_pareto_elbow(pysr_res.complexities, pysr_res.losses)
 
-        best_eq = pysr_res.equations[elbow_idx] if pysr_res.equations else pysr_res.best_equation
-        best_latex = pysr_res.best_latex
+        selected_eqs: list[str] = []
+        selected_complexities: list[float] = []
+        selected_losses: list[float] = []
+
+        if pysr_res.equations and isinstance(pysr_res.equations[0], list):
+            # Per-channel equations: equations[c] is candidate list for channel c
+            for ch_idx, ch_candidates in enumerate(pysr_res.equations):
+                ch_comps = pysr_res.complexities[ch_idx] if ch_idx < len(pysr_res.complexities) else []
+                ch_loss = pysr_res.losses[ch_idx] if ch_idx < len(pysr_res.losses) else []
+
+                if ch_candidates and ch_comps and ch_loss and len(ch_comps) == len(ch_loss):
+                    try:
+                        e_idx = find_pareto_elbow(ch_comps, ch_loss)
+                        selected_eqs.append(ch_candidates[e_idx])
+                        selected_complexities.append(float(ch_comps[e_idx]))
+                        selected_losses.append(float(ch_loss[e_idx]))
+                    except Exception as err:
+                        logger.debug("Pareto selection fallback on channel %d: %s", ch_idx, err)
+                        selected_eqs.append(ch_candidates[0])
+                        selected_complexities.append(float(ch_comps[0]))
+                        selected_losses.append(float(ch_loss[0]))
+                elif ch_candidates:
+                    selected_eqs.append(ch_candidates[0])
+                    selected_complexities.append(10.0)
+                    selected_losses.append(0.05)
+
+            best_eq = " ; ".join(selected_eqs) if selected_eqs else pysr_res.best_equation
+            best_latex = pysr_res.best_latex
+            avg_complexity = float(np.mean(selected_complexities)) if selected_complexities else 10.0
+            avg_loss = float(np.mean(selected_losses)) if selected_losses else 0.05
+        else:
+            best_eq = pysr_res.best_equation
+            best_latex = pysr_res.best_latex
+            avg_complexity = 10.0
+            avg_loss = 0.05
 
         # Cleanup model
         del model
@@ -173,11 +231,31 @@ class ReverseWorker:
             "status": "COMPLETED",
             "equation": best_eq,
             "latex": best_latex,
-            "complexity": pysr_res.complexities[elbow_idx] if pysr_res.complexities else 10.0,
-            "loss": pysr_res.losses[elbow_idx] if pysr_res.losses else 0.05,
+            "complexity": avg_complexity,
+            "loss": avg_loss,
         }
 
         await self.emit_progress(job_id, "completed", 100.0, result=result)
+
+        # Persist completed result in Redis
+        if self._redis_client:
+            try:
+                await self._redis_client.set(
+                    f"job:{job_id}:result",
+                    json.dumps({
+                        "download_url": None,
+                        "equation": str(best_eq),
+                        "metadata": {
+                            "latex": str(best_latex),
+                            "complexity": result["complexity"],
+                            "loss": result["loss"],
+                        },
+                    }),
+                    ex=86400,
+                )
+            except Exception as exc:
+                logger.warning("Failed writing reverse job result to Redis: %s", exc)
+
         return result
 
     async def start(self) -> None:
@@ -206,6 +284,14 @@ class ReverseWorker:
                             await self.process_job(payload)
                         except Exception as exc:
                             logger.exception("Error processing reverse job: %s", exc)
+                            jid = payload.get("job_id") if isinstance(payload, dict) else None
+                            if self._redis_client and jid:
+                                try:
+                                    fail_msg = {"status": "failed", "progress": 0.0, "error": str(exc)}
+                                    await self._redis_client.set(f"job:{jid}:status", json.dumps(fail_msg), ex=86400)
+                                    await self._redis_client.publish(f"job:{jid}:progress", json.dumps({"job_id": jid, **fail_msg}))
+                                except Exception:
+                                    pass
         except Exception as exc:
             logger.warning("RabbitMQ offline or connection failed: %s. Running in standalone loop.", exc)
             while self.is_running:

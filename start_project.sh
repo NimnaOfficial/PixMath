@@ -52,7 +52,7 @@ PY_VER="$("$PYTHON_BIN" --version 2>&1)"
 echo -e "${GREEN}[OK] Python: $PY_VER (using $PYTHON_BIN)${NC}"
 
 # Set PYTHONPATH for cross-service resolution
-export PYTHONPATH="$ROOT_PATH/libs/math-core:$ROOT_PATH/apps/api-gateway:$ROOT_PATH/services/forward-worker:$ROOT_PATH/services/reverse-worker:$ROOT_PATH/services/dlx-monitor:$ROOT_PATH/apps/cli:${PYTHONPATH:-}"
+export PYTHONPATH="$ROOT_PATH/libs/math-core:$ROOT_PATH/libs/schemas:$ROOT_PATH/apps/api-gateway:$ROOT_PATH/services/forward-worker:$ROOT_PATH/services/reverse-worker:$ROOT_PATH/services/dlx-monitor:$ROOT_PATH/apps/cli:${PYTHONPATH:-}"
 
 # Node.js & npm detection (loads nvm if present in ~/.nvm)
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
@@ -88,23 +88,29 @@ fi
 
 # 3. Launch API Gateway (FastAPI + Strawberry GraphQL + WebSockets)
 echo -e "${CYAN}[+] Starting PixMath API Gateway (Port 8000)...${NC}"
-setsid "$PYTHON_BIN" -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 \
-    > "$LOGS_DIR/gateway.log" 2> "$LOGS_DIR/gateway.err.log" < /dev/null &
+(cd "$ROOT_PATH/apps/api-gateway" && setsid "$PYTHON_BIN" -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 \
+    > "$LOGS_DIR/gateway.log" 2> "$LOGS_DIR/gateway.err.log" < /dev/null &)
 GATEWAY_PID=$!
 
 # 4. Launch Forward Worker
 echo -e "${CYAN}[+] Starting Forward Worker...${NC}"
-setsid "$PYTHON_BIN" services/forward-worker/app/worker.py \
-    > "$LOGS_DIR/forward_worker.log" 2> "$LOGS_DIR/forward_worker.err.log" < /dev/null &
+(cd "$ROOT_PATH/services/forward-worker" && setsid "$PYTHON_BIN" -m app.worker \
+    > "$LOGS_DIR/forward_worker.log" 2> "$LOGS_DIR/forward_worker.err.log" < /dev/null &)
 FWD_PID=$!
 
-# 5. Launch DLX Monitor
+# 5. Launch Reverse Worker
+echo -e "${CYAN}[+] Starting Reverse Worker...${NC}"
+(cd "$ROOT_PATH/services/reverse-worker" && setsid "$PYTHON_BIN" -m app.worker \
+    > "$LOGS_DIR/reverse_worker.log" 2> "$LOGS_DIR/reverse_worker.err.log" < /dev/null &)
+REV_PID=$!
+
+# 6. Launch DLX Monitor
 echo -e "${CYAN}[+] Starting DLX Monitor...${NC}"
-setsid "$PYTHON_BIN" services/dlx-monitor/app/telemetry.py \
-    > "$LOGS_DIR/dlx_monitor.log" 2> "$LOGS_DIR/dlx_monitor.err.log" < /dev/null &
+(cd "$ROOT_PATH/services/dlx-monitor" && setsid "$PYTHON_BIN" -m app.telemetry \
+    > "$LOGS_DIR/dlx_monitor.log" 2> "$LOGS_DIR/dlx_monitor.err.log" < /dev/null &)
 DLX_PID=$!
 
-# 6. Launch Web Studio Frontend (React 19 + WebGL2 on Port 5173)
+# 7. Launch Web Studio Frontend (React 19 + WebGL2 on Port 5173)
 WEB_PID=0
 if command -v npm >/dev/null 2>&1; then
     echo -e "${CYAN}[+] Starting PixMath Web Studio (Port 5173)...${NC}"
@@ -118,12 +124,13 @@ cat <<EOF > "$ROOT_PATH/.pixmath_services.json"
 {
   "Gateway": $GATEWAY_PID,
   "ForwardWorker": $FWD_PID,
+  "ReverseWorker": $REV_PID,
   "DLXMonitor": $DLX_PID,
   "WebStudio": $WEB_PID
 }
 EOF
 
-# 7. Health Check Verification
+# 8. Health Check Verification
 echo -e "${CYAN}[+] Verifying service availability...${NC}"
 RETRIES=8
 GATEWAY_READY=0

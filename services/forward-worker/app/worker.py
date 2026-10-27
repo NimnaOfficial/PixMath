@@ -76,6 +76,11 @@ class ForwardWorkerSettings(BaseSettings):
         validation_alias=AliasChoices("RABBITMQ_URL", "FW_RABBITMQ_URL"),
         description="AMQP connection URL for RabbitMQ.",
     )
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        validation_alias=AliasChoices("REDIS_URL", "PIXMATH_REDIS_URL", "FW_REDIS_URL"),
+        description="Redis connection URL for state updates.",
+    )
     queue_name: str = Field(
         default="forward_jobs",
         validation_alias=AliasChoices("RABBITMQ_FORWARD_QUEUE", "FW_QUEUE_NAME"),
@@ -127,13 +132,15 @@ async def _process_job(
     job: dict[str, Any],
     renderer: HeadlessRenderer,
     settings: ForwardWorkerSettings,
+    redis_client: Any = None,
 ) -> Path:
     """Execute the full forward pipeline for a single job.
 
     Parameters:
-        job:       Parsed job dict (must contain ``equation``).
-        renderer:  An initialised :class:`HeadlessRenderer`.
-        settings:  Worker configuration.
+        job:          Parsed job dict (must contain ``equation``).
+        renderer:     An initialised :class:`HeadlessRenderer`.
+        settings:     Worker configuration.
+        redis_client: Optional async Redis client for state tracking.
 
     Returns:
         Path to the rendered image file.
@@ -147,9 +154,24 @@ async def _process_job(
     width: int = job.get("width", settings.render_width)
     height: int = job.get("height", settings.render_height)
     time_val: float = float(job.get("time", 0.0))
-    job_id: str = job.get("id", uuid.uuid4().hex[:12])
+    job_id: str = str(job.get("job_id") or job.get("id") or uuid.uuid4().hex[:12])
 
     log.info("processing_job", job_id=job_id, equation=equation)
+
+    # Persist in-progress state to Redis
+    if redis_client:
+        try:
+            await redis_client.set(
+                f"job:{job_id}:status",
+                json.dumps({
+                    "status": "processing",
+                    "progress": 0.2,
+                    "submitted_at": job.get("submitted_at"),
+                }),
+                ex=86400,
+            )
+        except Exception as exc:
+            log.warning("failed_updating_redis_status", job_id=job_id, error=str(exc))
 
     # 1. Validate
     tree = validate(equation)
@@ -178,6 +200,35 @@ async def _process_job(
     image.save(str(output_path))
     log.info("render_complete", job_id=job_id, output=str(output_path))
 
+    # Persist completed state and result to Redis
+    if redis_client:
+        try:
+            await redis_client.set(
+                f"job:{job_id}:status",
+                json.dumps({
+                    "status": "completed",
+                    "progress": 1.0,
+                }),
+                ex=86400,
+            )
+            await redis_client.set(
+                f"job:{job_id}:result",
+                json.dumps({
+                    "download_url": f"/api/v1/jobs/{job_id}/download",
+                    "equation": equation,
+                    "metadata": {
+                        "width": width,
+                        "height": height,
+                        "time": time_val,
+                        "format": job.get("format", "png"),
+                        "path": str(output_path.resolve()),
+                    },
+                }),
+                ex=86400,
+            )
+        except Exception as exc:
+            log.warning("failed_updating_redis_result", job_id=job_id, error=str(exc))
+
     return output_path
 
 
@@ -189,22 +240,49 @@ async def _on_message(
     message: aio_pika.abc.AbstractIncomingMessage,
     renderer: HeadlessRenderer,
     settings: ForwardWorkerSettings,
+    redis_client: Any = None,
 ) -> None:
     """Handle a single incoming RabbitMQ message."""
+    job_id: str | None = None
     async with message.process(requeue=False):
         try:
             job = _parse_job(message.body)
-            await _process_job(job, renderer, settings)
+            job_id = str(job.get("job_id") or job.get("id") or "")
+            await _process_job(job, renderer, settings, redis_client=redis_client)
         except ASTSecurityError as exc:
             log.warning("ast_security_violation", detail=exc.detail)
+            if redis_client and job_id:
+                await redis_client.set(
+                    f"job:{job_id}:status",
+                    json.dumps({"status": "failed", "progress": 0.0, "error": f"AST Security Violation: {exc.detail}"}),
+                    ex=86400,
+                )
         except ShaderCompilationError as exc:
             log.error("shader_compilation_failed", info_log=exc.info_log)
+            if redis_client and job_id:
+                await redis_client.set(
+                    f"job:{job_id}:status",
+                    json.dumps({"status": "failed", "progress": 0.0, "error": f"Shader compilation failed: {exc.info_log}"}),
+                    ex=86400,
+                )
         except asyncio.TimeoutError:
             log.error("render_timeout", timeout=settings.render_timeout)
+            if redis_client and job_id:
+                await redis_client.set(
+                    f"job:{job_id}:status",
+                    json.dumps({"status": "failed", "progress": 0.0, "error": "Render timed out"}),
+                    ex=86400,
+                )
         except ValueError as exc:
             log.warning("invalid_job_message", error=str(exc))
-        except Exception:
+        except Exception as exc:
             log.exception("unexpected_error_processing_job")
+            if redis_client and job_id:
+                await redis_client.set(
+                    f"job:{job_id}:status",
+                    json.dumps({"status": "failed", "progress": 0.0, "error": str(exc)}),
+                    ex=86400,
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +300,17 @@ async def main() -> None:
 
     # Ensure output directory exists.
     Path(settings.output_dir).mkdir(parents=True, exist_ok=True)
+
+    # Connect to Redis for state persistence
+    redis_client = None
+    try:
+        import redis.asyncio as aioredis
+        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await asyncio.wait_for(redis_client.ping(), timeout=3.0)
+        log.info("redis_connected", redis_url=settings.redis_url)
+    except Exception as exc:
+        log.warning("redis_offline", error=str(exc))
+        redis_client = None
 
     # Graceful shutdown handling.
     shutdown_event = asyncio.Event()
@@ -257,17 +346,26 @@ async def main() -> None:
 
             async with queue.iterator() as queue_iter:
                 async for message in queue_iter:
-                    await _on_message(message, renderer, settings)
+                    await _on_message(message, renderer, settings, redis_client=redis_client)
                     if shutdown_event.is_set():
                         break
 
     except asyncio.CancelledError:
         log.info("worker_cancelled")
-    except Exception:
-        log.exception("fatal_worker_error")
-        sys.exit(1)
+    except Exception as exc:
+        log.warning("rabbitmq_offline_standalone", error=str(exc))
+        while not shutdown_event.is_set():
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                break
     finally:
         renderer.close()
+        if redis_client:
+            try:
+                await redis_client.aclose()
+            except Exception:
+                pass
         log.info("worker_shutdown_complete")
 
 

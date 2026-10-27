@@ -56,7 +56,7 @@ except Exception:
             kill_pid_gracefully "$pid" "$name"
         done
     elif command -v jq >/dev/null 2>&1; then
-        for service in Gateway ForwardWorker DLXMonitor WebStudio; do
+        for service in Gateway ForwardWorker ReverseWorker DLXMonitor WebStudio; do
             PID="$(jq -r ".$service // empty" "$PID_FILE" 2>/dev/null)"
             kill_pid_gracefully "$PID" "$service"
         done

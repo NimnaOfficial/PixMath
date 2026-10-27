@@ -188,34 +188,48 @@ class ParetoSelector:
 
 
 def find_pareto_elbow(
-    complexities: list[float],
-    losses: list[float],
+    complexities: list[float] | list[list[float]],
+    losses: list[float] | list[list[float]],
 ) -> int:
     """Find the elbow index on the Pareto frontier.
 
     Parameters
     ----------
     complexities:
-        Complexity values for each candidate equation.
+        Complexity values for each candidate equation (1D or 2D multi-channel list).
     losses:
         Corresponding loss values.
 
     Returns
     -------
     int:
-        Index (into the original lists) of the Pareto-optimal elbow point.
+        Index (into the candidate list) of the Pareto-optimal elbow point.
 
     Raises
     ------
     ValueError:
         If the input lists are empty or of different lengths.
     """
-    if len(complexities) != len(losses):
+    if not complexities or not losses:
+        return 0
+
+    # If multi-channel nested list is passed, select first channel
+    if isinstance(complexities[0], (list, tuple)):
+        comps_1d = [float(x) for x in complexities[0]]
+        losses_1d = [float(x) for x in (losses[0] if isinstance(losses[0], (list, tuple)) else losses)]
+    else:
+        comps_1d = [float(x) for x in complexities]
+        losses_1d = [float(x) for x in losses]
+
+    if len(comps_1d) != len(losses_1d):
         raise ValueError(
-            f"Lengths differ: complexities={len(complexities)}, "
-            f"losses={len(losses)}"
+            f"Lengths differ: complexities={len(comps_1d)}, "
+            f"losses={len(losses_1d)}"
         )
-    points = list(zip(complexities, losses, strict=True))
+    if len(comps_1d) == 0:
+        return 0
+
+    points = list(zip(comps_1d, losses_1d, strict=True))
     selector = ParetoSelector(points)
     result = selector.select()
     return result.elbow_index

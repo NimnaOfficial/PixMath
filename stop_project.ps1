@@ -3,7 +3,7 @@
     PixMath Full Stack Shutdown Script (PowerShell)
 .DESCRIPTION
     Cleanly terminates all running PixMath services:
-    1. Stops API Gateway, Forward Worker, DLX Monitor, and Web Studio
+    1. Stops API Gateway, Forward Worker, Reverse Worker, DLX Monitor, and Web Studio
     2. Frees ports 8000 (API) and 5173 (Vite Web Studio)
     3. Stops Docker containers if active
 #>
@@ -31,6 +31,10 @@ if (Test-Path $PidFile) {
         if ($Services.ForwardWorker) {
             Write-Host "[+] Stopping Forward Worker (PID: $($Services.ForwardWorker))..." -ForegroundColor DarkGray
             Stop-Process -Id $Services.ForwardWorker -Force
+        }
+        if ($Services.ReverseWorker) {
+            Write-Host "[+] Stopping Reverse Worker (PID: $($Services.ReverseWorker))..." -ForegroundColor DarkGray
+            Stop-Process -Id $Services.ReverseWorker -Force
         }
         if ($Services.DLXMonitor) {
             Write-Host "[+] Stopping DLX Monitor (PID: $($Services.DLXMonitor))..." -ForegroundColor DarkGray

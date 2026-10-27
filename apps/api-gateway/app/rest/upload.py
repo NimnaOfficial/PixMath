@@ -16,6 +16,7 @@ from typing import Any
 
 import aio_pika
 from fastapi import APIRouter, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,7 @@ async def submit_render_job(body: RenderRequest, request: Request) -> JobAccepte
 
     payload: dict[str, Any] = {
         "job_id": job_id,
+        "id": job_id,
         "type": "render",
         "equation": body.equation,
         "width": body.width,
@@ -269,4 +271,38 @@ async def get_job_result(job_id: str, request: Request) -> JobResult:
         download_url=result_data.get("download_url"),
         equation=result_data.get("equation"),
         metadata=result_data.get("metadata", {}),
+    )
+
+
+@router.get(
+    "/{job_id}/download",
+    summary="Download rendered output image",
+)
+async def download_job_output(job_id: str, request: Request) -> FileResponse:
+    """Return the rendered image binary file."""
+    from pathlib import Path
+
+    redis = getattr(request.app.state, "redis", None)
+    file_path = Path("./output") / f"{job_id}.png"
+    if redis:
+        result_raw = await redis.get(f"job:{job_id}:result")
+        if result_raw:
+            try:
+                res_meta = json.loads(result_raw)
+                meta_path = res_meta.get("metadata", {}).get("path")
+                if meta_path and Path(meta_path).exists():
+                    file_path = Path(meta_path)
+            except Exception:
+                pass
+
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rendered image for job {job_id} not found.",
+        )
+
+    return FileResponse(
+        path=str(file_path),
+        media_type="image/png",
+        filename=f"{job_id}.png",
     )

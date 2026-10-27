@@ -201,6 +201,12 @@ export function MathCanvas({ onExportPng, onExportGlsl, onExportLatex }: MathCan
         g.yz = a0.yz * x12.xz + h.yz * x12.yw;
         return 130.0 * dot(m, g);
       }
+      float snoise(float x, float y) {
+        return snoise(vec2(x, y));
+      }
+      float snoise(float v) {
+        return snoise(vec2(v, 0.0));
+      }
 
       void main() {
         // Normalized centered coordinates with aspect ratio preservation
