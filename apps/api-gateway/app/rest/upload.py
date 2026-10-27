@@ -90,6 +90,33 @@ class JobResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ValidationMetricsModel(BaseModel):
+    """Diagnostic metrics from ephemeral image validation."""
+
+    width: int
+    height: int
+    contrast_score: float
+    sharpness_score: float
+    coherence_score: float
+    purity_score: float
+    luminance_std: float
+    dynamic_range: float
+    autocorrelation: float
+    tv_ratio: float
+
+
+class ImageValidationResponse(BaseModel):
+    """Structured report returned after multi-layer mathematical validation."""
+
+    is_valid: bool
+    overall_score: float
+    grade: str
+    feasibility_assessment: str
+    rejection_reasons: list[str] = Field(default_factory=list)
+    metrics: ValidationMetricsModel
+    recommended_action: str
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -183,6 +210,34 @@ async def submit_render_job(body: RenderRequest, request: Request) -> JobAccepte
 
 
 @router.post(
+    "/validate-image",
+    response_model=ImageValidationResponse,
+    summary="Validate image mathematical feasibility ephemerally",
+)
+async def validate_uploaded_image(
+    image: UploadFile,
+) -> ImageValidationResponse:
+    """Analyze an uploaded image in memory to assess feasibility for equation extraction.
+
+    Strictly ephemeral: No bytes are written to disk. All buffers are discarded immediately.
+    """
+    from pixmath_core.validation import validate_image_ephemeral
+
+    contents = await image.read()
+    if not contents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty.",
+        )
+
+    try:
+        report = validate_image_ephemeral(contents)
+        return ImageValidationResponse(**report.to_dict())
+    finally:
+        del contents
+
+
+@router.post(
     "/extract",
     response_model=JobAccepted,
     status_code=status.HTTP_202_ACCEPTED,
@@ -191,13 +246,16 @@ async def submit_render_job(body: RenderRequest, request: Request) -> JobAccepte
 async def submit_extract_job(
     request: Request,
     image: UploadFile,
+    validate_precheck: bool = True,
 ) -> JobAccepted:
     """Accept an uploaded image and queue a reverse-extraction job.
 
-    The image bytes are base64-encoded and placed onto the
+    The image bytes are base64-encoded in-memory and placed onto the
     ``reverse_jobs`` queue for the reverse-worker to process.
+    Strictly ephemeral: No bytes are written to disk.
     """
     import base64
+    from pixmath_core.validation import validate_image_ephemeral
 
     job_id = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
@@ -209,6 +267,15 @@ async def submit_extract_job(
             detail="Uploaded file is empty.",
         )
 
+    if validate_precheck:
+        report = validate_image_ephemeral(contents)
+        if not report.is_valid:
+            reasons_summary = "; ".join(report.rejection_reasons)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Image validation declined: {reasons_summary}",
+            )
+
     payload: dict[str, Any] = {
         "job_id": job_id,
         "type": "extract",
@@ -216,6 +283,9 @@ async def submit_extract_job(
         "filename": image.filename or "upload.png",
         "submitted_at": now,
     }
+
+    # Free raw bytes buffer immediately
+    del contents
 
     await _publish_message(request, REVERSE_QUEUE, payload, job_id)
     return JobAccepted(job_id=job_id, submitted_at=now)
