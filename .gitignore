@@ -54,6 +54,7 @@ docker-compose.override.yml
 
 # ── Renders & Outputs ───────────────────────────────────────────────────
 output/
+outputs/
 renders/
 *.png
 *.jpg

@@ -25,6 +25,19 @@ if (!(Test-Path $EnvFile) -and (Test-Path $EnvExample)) {
     Copy-Item $EnvExample $EnvFile
 }
 
+# Load environment variables from .env
+if (Test-Path $EnvFile) {
+    Get-Content $EnvFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+            $parts = $line.Split("=", 2)
+            $varName = $parts[0].Trim()
+            $varVal = $parts[1].Trim()
+            [Environment]::SetEnvironmentVariable($varName, $varVal, "Process")
+        }
+    }
+}
+
 $env:PYTHONPATH = "$RootPath\libs\math-core;$RootPath\libs\schemas;$RootPath\apps\api-gateway;$RootPath\services\forward-worker;$RootPath\services\reverse-worker;$RootPath\services\dlx-monitor;$RootPath\apps\cli"
 
 # Python Interpreter Detection & Validation

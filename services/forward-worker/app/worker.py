@@ -180,18 +180,12 @@ async def _process_job(
     glsl_source = transpile(tree)
     log.debug("transpiled_glsl", job_id=job_id, glsl_length=len(glsl_source))
 
-    # 3. Render (run in executor to avoid blocking the event loop)
-    loop = asyncio.get_running_loop()
-    image = await asyncio.wait_for(
-        loop.run_in_executor(
-            None,
-            renderer.render,
-            glsl_source,
-            width,
-            height,
-            time_val,
-        ),
-        timeout=settings.render_timeout,
+    # 3. Render (ModernGL OpenGL context is bound to the current thread)
+    image = renderer.render(
+        glsl_source,
+        width=width,
+        height=height,
+        time=time_val,
     )
 
     # 4. Save
@@ -332,33 +326,37 @@ async def main() -> None:
     renderer.__enter__()
 
     try:
-        connection = await aio_pika.connect_robust(settings.rabbitmq_url)
-        async with connection:
-            channel = await connection.channel()
-            await channel.set_qos(prefetch_count=settings.prefetch_count)
-
-            queue = await channel.declare_queue(
-                settings.queue_name,
-                durable=True,
-            )
-
-            log.info("listening", queue=settings.queue_name)
-
-            async with queue.iterator() as queue_iter:
-                async for message in queue_iter:
-                    await _on_message(message, renderer, settings, redis_client=redis_client)
-                    if shutdown_event.is_set():
-                        break
-
-    except asyncio.CancelledError:
-        log.info("worker_cancelled")
-    except Exception as exc:
-        log.warning("rabbitmq_offline_standalone", error=str(exc))
         while not shutdown_event.is_set():
             try:
-                await asyncio.sleep(1.0)
+                connection = await aio_pika.connect_robust(settings.rabbitmq_url)
+                async with connection:
+                    channel = await connection.channel()
+                    await channel.set_qos(prefetch_count=settings.prefetch_count)
+
+                    queue = await channel.declare_queue(
+                        settings.queue_name,
+                        durable=True,
+                    )
+
+                    log.info("listening", queue=settings.queue_name)
+
+                    async with queue.iterator() as queue_iter:
+                        async for message in queue_iter:
+                            await _on_message(message, renderer, settings, redis_client=redis_client)
+                            if shutdown_event.is_set():
+                                break
+                if shutdown_event.is_set():
+                    break
             except asyncio.CancelledError:
+                log.info("worker_cancelled")
                 break
+            except Exception as exc:
+                log.warning("rabbitmq_connecting_or_standalone", error=str(exc))
+                try:
+                    await asyncio.wait_for(shutdown_event.wait(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    pass
+
     finally:
         renderer.close()
         if redis_client:

@@ -7,6 +7,7 @@ tracked in Redis.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -110,6 +111,16 @@ async def _publish_message(
         job_id: Unique identifier for this job.
     """
     channel = getattr(request.app.state, "rmq_channel", None)
+    if channel is None or channel.is_closed:
+        try:
+            from app.main import settings
+            conn = await asyncio.wait_for(aio_pika.connect_robust(settings.rabbitmq_url), timeout=2.0)
+            request.app.state.rmq_connection = conn
+            channel = await conn.channel()
+            request.app.state.rmq_channel = channel
+        except Exception:
+            channel = None
+
     if channel:
         # Ensure queue exists (idempotent).
         await channel.declare_queue(queue_name, durable=True)
@@ -294,6 +305,17 @@ async def download_job_output(job_id: str, request: Request) -> FileResponse:
                     file_path = Path(meta_path)
             except Exception:
                 pass
+
+    if not file_path.exists():
+        for cand in [
+            Path("./output") / f"{job_id}.png",
+            Path("../../output") / f"{job_id}.png",
+            Path("../services/forward-worker/output") / f"{job_id}.png",
+            Path("../../services/forward-worker/output") / f"{job_id}.png",
+        ]:
+            if cand.exists():
+                file_path = cand
+                break
 
     if not file_path.exists():
         raise HTTPException(
