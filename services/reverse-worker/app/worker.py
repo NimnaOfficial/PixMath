@@ -138,6 +138,22 @@ class ReverseWorker:
             except Exception as exc:
                 logger.warning("Failed decoding image_b64: %s", exc)
 
+        # 1. Ephemeral Deep Validation Guard
+        from pixmath_core.validation import validate_image_ephemeral
+        if image_bytes:
+            v_report = validate_image_ephemeral(image_bytes)
+            if not v_report.is_valid:
+                err_msg = "; ".join(v_report.rejection_reasons)
+                logger.warning("Job %s rejected by validation guard: %s", job_id, err_msg)
+                await self.emit_progress(job_id, "failed", 0.0, error=err_msg)
+                if self._redis_client:
+                    await self._redis_client.set(
+                        f"job:{job_id}:status",
+                        json.dumps({"status": "failed", "progress": 0.0, "error": f"Validation failed: {err_msg}"}),
+                        ex=86400,
+                    )
+                return {"job_id": job_id, "status": "FAILED", "error": err_msg}
+
         await self.emit_progress(job_id, "ingestion", 5.0, message="Loading target image")
 
         # 1. Load image (Pillow + numpy)

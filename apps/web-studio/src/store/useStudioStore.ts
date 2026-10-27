@@ -2,6 +2,39 @@ import { create } from 'zustand';
 
 export type StudioMode = 'forward' | 'reverse';
 
+export interface ValidationMetrics {
+  width: number;
+  height: number;
+  contrast_score: number;
+  sharpness_score: number;
+  coherence_score: number;
+  purity_score: number;
+  luminance_std: number;
+  dynamic_range: number;
+  autocorrelation: number;
+  tv_ratio: number;
+}
+
+export interface ImageValidationReport {
+  is_valid: boolean;
+  overall_score: number;
+  grade: string;
+  feasibility_assessment: string;
+  rejection_reasons: string[];
+  metrics: ValidationMetrics;
+  recommended_action: string;
+}
+
+export interface ReverseExtractedResult {
+  equation: string;
+  latex: string;
+  complexity: number;
+  loss: number;
+  psnr?: number;
+}
+
+export type ReverseStatus = 'idle' | 'validating' | 'extracting' | 'success' | 'declined';
+
 export interface ParetoCandidate {
   id: string;
   generation: number;
@@ -59,6 +92,24 @@ interface StudioState {
   setTargetImageUri: (uri: string | null) => void;
   roiMask: Uint8Array | null;
   setRoiMask: (mask: Uint8Array | null) => void;
+
+  // Reverse Mode Dedicated State
+  reverseStatus: ReverseStatus;
+  setReverseStatus: (status: ReverseStatus) => void;
+  reverseProgress: number; // 0 to 100
+  setReverseProgress: (progress: number) => void;
+  reversePhase: string;
+  setReversePhase: (phase: string, message?: string) => void;
+  reversePhaseMessage: string;
+  reverseValidationReport: ImageValidationReport | null;
+  setReverseValidationReport: (report: ImageValidationReport | null) => void;
+  reverseExtractedResult: ReverseExtractedResult | null;
+  setReverseExtractedResult: (res: ReverseExtractedResult | null) => void;
+  ephemeralPreviewUrl: string | null;
+  ephemeralFileName: string | null;
+  ephemeralFileSize: number | null;
+  setEphemeralImage: (file: File | null) => void;
+  resetReverseState: () => void;
 
   // Live Telemetry & Pareto Stream
   gpuFps: number;
@@ -180,4 +231,58 @@ export const useStudioStore = create<StudioState>((set) => ({
   setCrossDissolveProgress: (crossDissolveProgress) => set({ crossDissolveProgress }),
   previousEquation: null,
   setPreviousEquation: (previousEquation) => set({ previousEquation }),
+
+  // Reverse Mode Implementation
+  reverseStatus: 'idle',
+  setReverseStatus: (reverseStatus) => set({ reverseStatus }),
+  reverseProgress: 0,
+  setReverseProgress: (reverseProgress) => set({ reverseProgress }),
+  reversePhase: 'idle',
+  reversePhaseMessage: '',
+  setReversePhase: (reversePhase, reversePhaseMessage = '') =>
+    set({ reversePhase, reversePhaseMessage }),
+  reverseValidationReport: null,
+  setReverseValidationReport: (reverseValidationReport) => set({ reverseValidationReport }),
+  reverseExtractedResult: null,
+  setReverseExtractedResult: (reverseExtractedResult) => set({ reverseExtractedResult }),
+  ephemeralPreviewUrl: null,
+  ephemeralFileName: null,
+  ephemeralFileSize: null,
+  setEphemeralImage: (file) => {
+    set((state) => {
+      if (state.ephemeralPreviewUrl) {
+        URL.revokeObjectURL(state.ephemeralPreviewUrl);
+      }
+      if (!file) {
+        return {
+          ephemeralPreviewUrl: null,
+          ephemeralFileName: null,
+          ephemeralFileSize: null,
+        };
+      }
+      return {
+        ephemeralPreviewUrl: URL.createObjectURL(file),
+        ephemeralFileName: file.name,
+        ephemeralFileSize: file.size,
+      };
+    });
+  },
+  resetReverseState: () => {
+    set((state) => {
+      if (state.ephemeralPreviewUrl) {
+        URL.revokeObjectURL(state.ephemeralPreviewUrl);
+      }
+      return {
+        reverseStatus: 'idle',
+        reverseProgress: 0,
+        reversePhase: 'idle',
+        reversePhaseMessage: '',
+        reverseValidationReport: null,
+        reverseExtractedResult: null,
+        ephemeralPreviewUrl: null,
+        ephemeralFileName: null,
+        ephemeralFileSize: null,
+      };
+    });
+  },
 }));

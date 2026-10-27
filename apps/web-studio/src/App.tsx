@@ -3,6 +3,7 @@ import { StudioTopbar } from './components/StudioTopbar';
 import { SymbolicEditorPanel } from './components/SymbolicEditorPanel';
 import { MathCanvas } from './components/MathCanvas';
 import { AnalyticsRadarPanel } from './components/AnalyticsRadarPanel';
+import { ReverseExtractionStudio } from './components/ReverseExtractionStudio';
 import { useStudioStore } from './store/useStudioStore';
 import {
   ChevronLeft,
@@ -15,6 +16,7 @@ import {
 
 export default function App() {
   const {
+    mode,
     equation,
     isRoiBrushActive,
     setIsRoiBrushActive,
@@ -115,61 +117,67 @@ void main() {
       {/* ── 1. Topbar: Mode Switcher, Latency, FPS, Job Stats ────── */}
       <StudioTopbar onPresetSelect={(name) => notify(`Loaded Preset: ${name}`)} />
 
-      {/* ── 2. Master 3-Column Workstation Topology ────────────── */}
-      <main className="flex-1 w-full flex p-3 md:p-4 gap-3 md:gap-4 overflow-hidden relative">
-        {/* ── Panel 1: Symbolic Formula IDE (Left) ─────────────── */}
-        {!panel1Collapsed ? (
-          <section className="w-[360px] lg:w-[400px] shrink-0 flex flex-col surface-panel-glass rounded-2xl p-4 border border-white/[0.07] shadow-2xl relative hw-accelerate">
+      {/* ── 2. Master Workstation Topology ────────────────────── */}
+      {mode === 'reverse' ? (
+        <main className="flex-1 w-full p-2 md:p-4 overflow-y-auto relative animate-fade-in">
+          <ReverseExtractionStudio onNotify={notify} />
+        </main>
+      ) : (
+        <main className="flex-1 w-full flex p-3 md:p-4 gap-3 md:gap-4 overflow-hidden relative animate-fade-in">
+          {/* ── Panel 1: Symbolic Formula IDE (Left) ─────────────── */}
+          {!panel1Collapsed ? (
+            <section className="w-[360px] lg:w-[400px] shrink-0 flex flex-col surface-panel-glass rounded-2xl p-4 border border-white/[0.07] shadow-2xl relative hw-accelerate">
+              <button
+                onClick={() => setPanel1Collapsed(true)}
+                className="absolute -right-3 top-6 w-6 h-6 rounded-full bg-[#0A0F1D] border border-white/[0.1] text-slate-400 hover:text-white flex items-center justify-center z-30 shadow-lg"
+                title="Collapse Panel 1"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <SymbolicEditorPanel onCompileShader={() => notify('GLSL Transpiled to WebGL2 Pipeline')} />
+            </section>
+          ) : (
             <button
-              onClick={() => setPanel1Collapsed(true)}
-              className="absolute -right-3 top-6 w-6 h-6 rounded-full bg-[#0A0F1D] border border-white/[0.1] text-slate-400 hover:text-white flex items-center justify-center z-30 shadow-lg"
-              title="Collapse Panel 1"
+              onClick={() => setPanel1Collapsed(false)}
+              className="w-8 h-12 my-auto bg-[#0A0F1D] border border-white/[0.1] rounded-r-xl text-slate-400 hover:text-[#06B6D4] flex items-center justify-center shadow-lg transition"
+              title="Expand Symbolic IDE"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
+              <ChevronRight className="w-4 h-4" />
             </button>
-            <SymbolicEditorPanel onCompileShader={() => notify('GLSL Transpiled to WebGL2 Pipeline')} />
+          )}
+
+          {/* ── Panel 2: Real-Time Viewport (Center Stage) ───────── */}
+          <section className="flex-1 min-h-[500px] flex flex-col relative rounded-2xl overflow-hidden hw-accelerate">
+            <MathCanvas
+              onExportPng={() => notify('4K Frame Snapshot Saved')}
+              onExportGlsl={() => setExportModal('glsl')}
+              onExportLatex={() => setExportModal('latex')}
+            />
           </section>
-        ) : (
-          <button
-            onClick={() => setPanel1Collapsed(false)}
-            className="w-8 h-12 my-auto bg-[#0A0F1D] border border-white/[0.1] rounded-r-xl text-slate-400 hover:text-[#06B6D4] flex items-center justify-center shadow-lg transition"
-            title="Expand Symbolic IDE"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        )}
 
-        {/* ── Panel 2: Real-Time Viewport (Center Stage) ───────── */}
-        <section className="flex-1 min-h-[500px] flex flex-col relative rounded-2xl overflow-hidden hw-accelerate">
-          <MathCanvas
-            onExportPng={() => notify('4K Frame Snapshot Saved')}
-            onExportGlsl={() => setExportModal('glsl')}
-            onExportLatex={() => setExportModal('latex')}
-          />
-        </section>
-
-        {/* ── Panel 3: Analytics & Radar (Right) ───────────────── */}
-        {!panel3Collapsed ? (
-          <section className="w-[380px] lg:w-[420px] shrink-0 flex flex-col surface-panel-glass rounded-2xl p-4 border border-white/[0.07] shadow-2xl relative hw-accelerate">
+          {/* ── Panel 3: Analytics & Radar (Right) ───────────────── */}
+          {!panel3Collapsed ? (
+            <section className="w-[380px] lg:w-[420px] shrink-0 flex flex-col surface-panel-glass rounded-2xl p-4 border border-white/[0.07] shadow-2xl relative hw-accelerate">
+              <button
+                onClick={() => setPanel3Collapsed(true)}
+                className="absolute -left-3 top-6 w-6 h-6 rounded-full bg-[#0A0F1D] border border-white/[0.1] text-slate-400 hover:text-white flex items-center justify-center z-30 shadow-lg"
+                title="Collapse Panel 3"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              <AnalyticsRadarPanel />
+            </section>
+          ) : (
             <button
-              onClick={() => setPanel3Collapsed(true)}
-              className="absolute -left-3 top-6 w-6 h-6 rounded-full bg-[#0A0F1D] border border-white/[0.1] text-slate-400 hover:text-white flex items-center justify-center z-30 shadow-lg"
-              title="Collapse Panel 3"
+              onClick={() => setPanel3Collapsed(false)}
+              className="w-8 h-12 my-auto bg-[#0A0F1D] border border-white/[0.1] rounded-l-xl text-slate-400 hover:text-[#10B981] flex items-center justify-center shadow-lg transition"
+              title="Expand Analytics Radar"
             >
-              <ChevronRight className="w-3.5 h-3.5" />
+              <ChevronLeft className="w-4 h-4" />
             </button>
-            <AnalyticsRadarPanel />
-          </section>
-        ) : (
-          <button
-            onClick={() => setPanel3Collapsed(false)}
-            className="w-8 h-12 my-auto bg-[#0A0F1D] border border-white/[0.1] rounded-l-xl text-slate-400 hover:text-[#10B981] flex items-center justify-center shadow-lg transition"
-            title="Expand Analytics Radar"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-        )}
-      </main>
+          )}
+        </main>
+      )}
 
       {/* ── Export Code Modal (GLSL / LaTeX) ───────────────────── */}
       {exportModal && (
