@@ -188,10 +188,12 @@ async def _process_job(
         time=time_val,
     )
 
-    # 4. Save
+    # 4. Save with lossless round-trip watermark & metadata
+    from pixmath_core.recognition import embed_forward_watermark
+    image = embed_forward_watermark(image, equation=equation, latex=job.get("latex", equation))
     output_path = Path(settings.output_dir) / f"{job_id}.png"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(str(output_path))
+    image.save(str(output_path), pnginfo=getattr(image, "_pnginfo", None))
     log.info("render_complete", job_id=job_id, output=str(output_path))
 
     # Persist completed state and result to Redis

@@ -240,8 +240,10 @@ def render(
 
     # --- Save ------------------------------------------------------------
     out.parent.mkdir(parents=True, exist_ok=True)
+    from pixmath_core.recognition import embed_forward_watermark
     img = Image.fromarray(pixels, mode="RGBA")
-    img.save(str(out))
+    img = embed_forward_watermark(img, equation=eq)
+    img.save(str(out), pnginfo=getattr(img, "_pnginfo", None))
 
     # --- Stats -----------------------------------------------------------
     stats_table = Table(title="Render Statistics", show_header=False)
@@ -268,21 +270,29 @@ def extract(
         help="Output equation file path.",
     ),
 ) -> None:
-    """Extract a mathematical equation from an image.
+    """Extract a mathematical equation from an image using the recognition pipeline."""
+    from pixmath_core.recognition import recognize_math_equation
 
-    .. note::
+    with console.status("[bold cyan]Analyzing mathematical image...[/bold cyan]"):
+        with open(image, "rb") as f:
+            image_bytes = f.read()
+        res = recognize_math_equation(image_bytes)
 
-        This feature is planned for Phase 2 and is not yet implemented.
-    """
-    console.print(
-        Panel(
-            "[bold yellow]🚧  Coming in Phase 2[/bold yellow]\n\n"
-            "Reverse extraction (image → equation) will use SIREN/KAN\n"
-            "neural networks combined with PySR symbolic regression.",
-            title="[bold]PixMath Extract[/bold]",
-            border_style="yellow",
-        )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(res.equation, encoding="utf-8")
+
+    color = "green" if res.confidence >= 80.0 else "yellow"
+    summary_panel = Panel(
+        f"[bold]Equation:[/bold]  [cyan]{res.equation}[/cyan]\n"
+        f"[bold]LaTeX:[/bold]     [magenta]{res.latex}[/magenta]\n"
+        f"[bold]Confidence:[/bold] [{color}]{res.confidence}% ({res.confidence_grade})[/{color}]\n"
+        f"[bold]Method:[/bold]     {res.method}\n"
+        f"[bold]Latency:[/bold]    {res.processing_time_ms:.2f} ms\n"
+        f"[bold]Saved to:[/bold]   {out.resolve()}",
+        title="[bold green]✓ Extraction Complete[/bold green]",
+        border_style="green" if res.confidence >= 80.0 else "yellow",
     )
+    console.print(summary_panel)
 
 
 @app.command()

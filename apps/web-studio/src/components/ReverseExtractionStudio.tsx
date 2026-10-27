@@ -15,6 +15,7 @@ import {
   Activity,
   Flame,
   XCircle,
+  Cpu,
 } from 'lucide-react';
 import {
   useStudioStore,
@@ -258,10 +259,17 @@ export function ReverseExtractionStudio({ onNotify }: ReverseExtractionStudioPro
           </div>
         </div>
 
-        {/* Ephemeral Privacy Badge */}
-        <div className="flex items-center space-x-2 bg-emerald-500/10 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-emerald-400 text-xs font-mono shrink-0">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span className="font-semibold">100% In-Memory Ephemeral Guarantee</span>
+        {/* Hardware & Privacy Badges */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center space-x-1.5 bg-cyan-500/10 border border-cyan-500/30 px-3 py-1.5 rounded-xl text-cyan-300 text-xs font-mono shrink-0">
+            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="font-semibold">Hardware Accel: WebGL / Worker</span>
+          </div>
+
+          <div className="flex items-center space-x-2 bg-emerald-500/10 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-emerald-400 text-xs font-mono shrink-0">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span className="font-semibold">100% In-Memory Ephemeral</span>
+          </div>
         </div>
       </div>
 
@@ -653,21 +661,71 @@ export function ReverseExtractionStudio({ onNotify }: ReverseExtractionStudioPro
           {reverseStatus === 'success' && reverseExtractedResult && (
             <div className="flex-1 bg-[#0A0F1D]/90 border border-emerald-500/40 rounded-2xl p-6 backdrop-blur-xl flex flex-col justify-between space-y-5 shadow-2xl">
               <div className="space-y-4">
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+                {/* Header with Confidence Gauge */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-white/[0.08] pb-3 gap-2">
                   <div className="flex items-center space-x-2 text-emerald-400 font-mono text-sm font-bold uppercase">
                     <Sparkles className="w-5 h-5 text-emerald-400" />
                     <span>Closed-Form Equation Extracted!</span>
                   </div>
+
                   <div className="flex items-center space-x-2 font-mono text-xs">
-                    <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
-                      Loss: {reverseExtractedResult.loss.toFixed(6)}
-                    </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 font-bold">
-                      Complexity: {reverseExtractedResult.complexity.toFixed(1)}
-                    </span>
+                    {/* Confidence Score Pill */}
+                    <div
+                      className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg border font-bold shadow-sm ${
+                        (reverseExtractedResult.confidence ?? 100) >= 80
+                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                          : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                      }`}
+                      title={`Recognition Accuracy: ${reverseExtractedResult.confidence}%`}
+                    >
+                      {(reverseExtractedResult.confidence ?? 100) >= 80 ? (
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                      ) : (
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                      )}
+                      <span>{reverseExtractedResult.confidence ?? 100}% Accuracy</span>
+                    </div>
+
+                    {reverseExtractedResult.isRoundtripLossless ? (
+                      <span className="px-2.5 py-1 rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-bold hidden sm:inline">
+                        100% Lossless Roundtrip
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-lg bg-white/[0.06] text-slate-300 border border-white/[0.1] font-medium hidden sm:inline">
+                        Method: {reverseExtractedResult.method || '2D Structural'}
+                      </span>
+                    )}
                   </div>
                 </div>
+
+                {/* Friendly Warning Banner if Confidence < 80% */}
+                {(reverseExtractedResult.confidence ?? 100) < 80 && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 font-mono text-xs space-y-2">
+                    <div className="flex items-center space-x-2 text-amber-300 font-bold">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Low Certainty Warning ({reverseExtractedResult.confidence}% Accuracy)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Certain fine mathematical symbols, exponents, or fraction baselines were ambiguous.
+                      We recommend reviewing the equation and making any manual edits by clicking{' '}
+                      <span className="text-cyan-300 font-bold">Edit in Forward Mode</span> below.
+                    </p>
+                    {reverseExtractedResult.uncertainTokens && reverseExtractedResult.uncertainTokens.length > 0 && (
+                      <div className="pt-1 flex flex-wrap gap-1.5 items-center">
+                        <span className="text-[10px] text-amber-400 font-bold">Flagged Symbols:</span>
+                        {reverseExtractedResult.uncertainTokens.map((tok, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-0.5 rounded bg-amber-400/20 border border-amber-400/40 text-amber-200 text-[10px] font-bold"
+                            title={tok.reason}
+                          >
+                            '{tok.token}' ({tok.confidence}%)
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* View Tabs */}
                 <div className="flex items-center space-x-2 border-b border-white/[0.06] pb-2">

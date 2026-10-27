@@ -276,6 +276,38 @@ async def submit_extract_job(
                 detail=f"Image validation declined: {reasons_summary}",
             )
 
+    # Fast-path: Check for instant lossless round-trip watermark
+    from pixmath_core.recognition import recognize_math_equation
+    rec_res = recognize_math_equation(contents)
+    if rec_res.is_roundtrip_lossless:
+        redis = getattr(request.app.state, "redis", None)
+        if redis:
+            await redis.set(
+                f"job:{job_id}:status",
+                json.dumps({"status": "completed", "progress": 1.0}),
+                ex=JOB_TTL_SECONDS,
+            )
+            await redis.set(
+                f"job:{job_id}:result",
+                json.dumps({
+                    "download_url": None,
+                    "equation": rec_res.equation,
+                    "metadata": {
+                        "latex": rec_res.latex,
+                        "confidence": rec_res.confidence,
+                        "confidence_grade": rec_res.confidence_grade,
+                        "is_roundtrip_lossless": True,
+                        "method": rec_res.method,
+                        "uncertain_tokens": rec_res.uncertain_tokens,
+                        "complexity": 1.0,
+                        "loss": 0.0,
+                    },
+                }),
+                ex=JOB_TTL_SECONDS,
+            )
+        del contents
+        return JobAccepted(job_id=job_id, submitted_at=now)
+
     payload: dict[str, Any] = {
         "job_id": job_id,
         "type": "extract",

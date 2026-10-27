@@ -25,12 +25,24 @@ export interface ImageValidationReport {
   recommended_action: string;
 }
 
+export interface UncertainTokenInfo {
+  token: string;
+  position: [number, number];
+  confidence: number;
+  reason: string;
+}
+
 export interface ReverseExtractedResult {
   equation: string;
   latex: string;
   complexity: number;
   loss: number;
   psnr?: number;
+  confidence: number;
+  confidenceGrade: 'high' | 'medium' | 'low';
+  isRoundtripLossless?: boolean;
+  method?: string;
+  uncertainTokens?: UncertainTokenInfo[];
 }
 
 export type ReverseStatus = 'idle' | 'validating' | 'extracting' | 'success' | 'declined';
