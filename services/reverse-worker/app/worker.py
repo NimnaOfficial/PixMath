@@ -11,6 +11,15 @@ Listens to the reverse_jobs queue via RabbitMQ, processes image inputs:
 
 from __future__ import annotations
 
+import os
+
+# Configure JuliaCall signal handling and import before torch to prevent OpenMP / threading segfaults
+os.environ.setdefault("PYTHON_JULIACALL_HANDLE_SIGNALS", "yes")
+try:
+    import juliacall  # noqa: F401
+except ImportError:
+    pass
+
 import asyncio
 import gc
 import json
@@ -20,7 +29,7 @@ import sys
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger("pixmath.reverse_worker")
@@ -29,16 +38,28 @@ logger = logging.getLogger("pixmath.reverse_worker")
 class ReverseWorkerSettings(BaseSettings):
     """Configuration settings for PixMath Reverse Worker."""
 
-    rabbitmq_url: str = Field(default="amqp://pixmath:pixmath@localhost:5672/", alias="RABBITMQ_URL")
-    reverse_queue: str = Field(default="reverse_jobs", alias="RABBITMQ_REVERSE_QUEUE")
-    redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
-    redis_pubsub_channel: str = Field(default="pixmath:events", alias="REDIS_PUBSUB_CHANNEL")
-    siren_omega_0: float = Field(default=30.0, alias="REVERSE_SIREN_OMEGA0")
-    siren_epochs: int = Field(default=1000, alias="REVERSE_SIREN_EPOCHS")
-    siren_lr: float = Field(default=1e-4, alias="REVERSE_SIREN_LR")
-    pysr_populations: int = Field(default=20, alias="REVERSE_PYSR_POPULATIONS")
-    pysr_niterations: int = Field(default=50, alias="REVERSE_PYSR_NITERATIONS")
-    pysr_maxsize: int = Field(default=30, alias="REVERSE_PYSR_MAXSIZE")
+    rabbitmq_url: str = Field(
+        default="amqp://pixmath:pixmath@localhost:5672/",
+        validation_alias=AliasChoices("RABBITMQ_URL", "PIXMATH_RABBITMQ_URL", "REV_RABBITMQ_URL"),
+    )
+    reverse_queue: str = Field(
+        default="reverse_jobs",
+        validation_alias=AliasChoices("RABBITMQ_REVERSE_QUEUE", "REV_QUEUE_NAME"),
+    )
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        validation_alias=AliasChoices("REDIS_URL", "PIXMATH_REDIS_URL", "REV_REDIS_URL"),
+    )
+    redis_pubsub_channel: str = Field(
+        default="pixmath:events",
+        validation_alias=AliasChoices("REDIS_PUBSUB_CHANNEL", "REV_PUBSUB_CHANNEL"),
+    )
+    siren_omega_0: float = Field(default=30.0, validation_alias=AliasChoices("REVERSE_SIREN_OMEGA0", "SIREN_OMEGA0"))
+    siren_epochs: int = Field(default=1000, validation_alias=AliasChoices("REVERSE_SIREN_EPOCHS", "SIREN_EPOCHS"))
+    siren_lr: float = Field(default=1e-4, validation_alias=AliasChoices("REVERSE_SIREN_LR", "SIREN_LR"))
+    pysr_populations: int = Field(default=20, validation_alias=AliasChoices("REVERSE_PYSR_POPULATIONS", "PYSR_POPULATIONS"))
+    pysr_niterations: int = Field(default=50, validation_alias=AliasChoices("REVERSE_PYSR_NITERATIONS", "PYSR_NITERATIONS"))
+    pysr_maxsize: int = Field(default=30, validation_alias=AliasChoices("REVERSE_PYSR_MAXSIZE", "PYSR_MAXSIZE"))
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
@@ -199,21 +220,21 @@ class ReverseWorker:
                 if ch_candidates and ch_comps and ch_loss and len(ch_comps) == len(ch_loss):
                     try:
                         e_idx = find_pareto_elbow(ch_comps, ch_loss)
-                        selected_eqs.append(ch_candidates[e_idx])
+                        selected_eqs.append(str(ch_candidates[e_idx]))
                         selected_complexities.append(float(ch_comps[e_idx]))
                         selected_losses.append(float(ch_loss[e_idx]))
                     except Exception as err:
                         logger.debug("Pareto selection fallback on channel %d: %s", ch_idx, err)
-                        selected_eqs.append(ch_candidates[0])
+                        selected_eqs.append(str(ch_candidates[0]))
                         selected_complexities.append(float(ch_comps[0]))
                         selected_losses.append(float(ch_loss[0]))
                 elif ch_candidates:
-                    selected_eqs.append(ch_candidates[0])
+                    selected_eqs.append(str(ch_candidates[0]))
                     selected_complexities.append(10.0)
                     selected_losses.append(0.05)
 
-            best_eq = " ; ".join(selected_eqs) if selected_eqs else pysr_res.best_equation
-            best_latex = pysr_res.best_latex
+            best_eq = " ; ".join(str(e) for e in selected_eqs) if selected_eqs else str(pysr_res.best_equation)
+            best_latex = str(pysr_res.best_latex)
             avg_complexity = float(np.mean(selected_complexities)) if selected_complexities else 10.0
             avg_loss = float(np.mean(selected_losses)) if selected_losses else 0.05
         else:
@@ -263,39 +284,46 @@ class ReverseWorker:
         self.is_running = True
         await self.connect_redis()
 
-        try:
-            import aio_pika
-            connection = await aio_pika.connect_robust(self.settings.rabbitmq_url)
-            channel = await connection.channel()
-            # Enforce strict backpressure prefetch=1 per Section 3.2 of the Blueprint
-            await channel.set_qos(prefetch_count=1)
+        while self.is_running:
+            try:
+                import aio_pika
+                connection = await aio_pika.connect_robust(self.settings.rabbitmq_url)
+                channel = await connection.channel()
+                # Enforce strict backpressure prefetch=1 per Section 3.2 of the Blueprint
+                await channel.set_qos(prefetch_count=1)
 
-            queue = await channel.declare_queue(self.settings.reverse_queue, durable=True)
-            logger.info("Reverse worker listening on queue '%s' (prefetch=1)", self.settings.reverse_queue)
+                queue = await channel.declare_queue(self.settings.reverse_queue, durable=True)
+                logger.info("Reverse worker listening on queue '%s' (prefetch=1)", self.settings.reverse_queue)
 
-            async with queue.iterator() as queue_iter:
-                async for message in queue_iter:
-                    if not self.is_running:
-                        break
-                    async with message.process():
-                        try:
-                            payload = json.loads(message.body.decode())
-                            logger.info("Received reverse job: %s", payload.get("job_id"))
-                            await self.process_job(payload)
-                        except Exception as exc:
-                            logger.exception("Error processing reverse job: %s", exc)
-                            jid = payload.get("job_id") if isinstance(payload, dict) else None
-                            if self._redis_client and jid:
-                                try:
-                                    fail_msg = {"status": "failed", "progress": 0.0, "error": str(exc)}
-                                    await self._redis_client.set(f"job:{jid}:status", json.dumps(fail_msg), ex=86400)
-                                    await self._redis_client.publish(f"job:{jid}:progress", json.dumps({"job_id": jid, **fail_msg}))
-                                except Exception:
-                                    pass
-        except Exception as exc:
-            logger.warning("RabbitMQ offline or connection failed: %s. Running in standalone loop.", exc)
-            while self.is_running:
-                await asyncio.sleep(1.0)
+                async with queue.iterator() as queue_iter:
+                    async for message in queue_iter:
+                        if not self.is_running:
+                            break
+                        async with message.process():
+                            try:
+                                payload = json.loads(message.body.decode())
+                                logger.info("Received reverse job: %s", payload.get("job_id"))
+                                await self.process_job(payload)
+                            except Exception as exc:
+                                logger.exception("Error processing reverse job: %s", exc)
+                                jid = payload.get("job_id") if isinstance(payload, dict) else None
+                                if self._redis_client and jid:
+                                    try:
+                                        fail_msg = {"status": "failed", "progress": 0.0, "error": str(exc)}
+                                        await self._redis_client.set(f"job:{jid}:status", json.dumps(fail_msg), ex=86400)
+                                        await self._redis_client.publish(f"job:{jid}:progress", json.dumps({"job_id": jid, **fail_msg}))
+                                    except Exception:
+                                        pass
+                if not self.is_running:
+                    break
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.warning("RabbitMQ offline or connecting: %s. Retrying in 3s...", exc)
+                try:
+                    await asyncio.sleep(3.0)
+                except asyncio.CancelledError:
+                    break
 
     async def stop(self) -> None:
         """Gracefully stop worker."""

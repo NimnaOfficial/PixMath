@@ -69,16 +69,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.redis = None
 
     # --- startup ---------------------------------------------------------
-    try:
-        logger.info("Connecting to RabbitMQ at %s", settings.rabbitmq_url)
-        app.state.rmq_connection = await asyncio.wait_for(
-            aio_pika.connect_robust(settings.rabbitmq_url),
-            timeout=3.0,
-        )
-        app.state.rmq_channel = await app.state.rmq_connection.channel()
-        logger.info("RabbitMQ connection established.")
-    except Exception as exc:
-        logger.warning("RabbitMQ offline (%s). Running in standalone mode.", exc)
+    for attempt in range(1, 4):
+        try:
+            logger.info("Connecting to RabbitMQ at %s (attempt %d/3)", settings.rabbitmq_url, attempt)
+            app.state.rmq_connection = await asyncio.wait_for(
+                aio_pika.connect_robust(settings.rabbitmq_url),
+                timeout=3.0,
+            )
+            app.state.rmq_channel = await app.state.rmq_connection.channel()
+            logger.info("RabbitMQ connection established.")
+            break
+        except Exception as exc:
+            if attempt < 3:
+                await asyncio.sleep(1.0)
+            else:
+                logger.warning("RabbitMQ offline (%s). Running in standalone mode.", exc)
 
     try:
         logger.info("Connecting to Redis at %s", settings.redis_url)

@@ -130,7 +130,7 @@ def _cpu_eval(equation: str, width: int, height: int, t: float) -> np.ndarray:
             (val - e0) / (e1 - e0 + 1e-10), 0.0, 1.0
         ),
         "length": lambda *args: np.sqrt(sum(a**2 for a in args)),
-        "noise": lambda nx, ny: simplex_noise_2d(nx, ny),
+        "noise": lambda nx, ny=None: simplex_noise_2d(nx, np.zeros_like(nx) if ny is None else ny),
     }
 
     try:

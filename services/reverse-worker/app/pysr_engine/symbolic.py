@@ -192,7 +192,6 @@ class SymbolicExtractor:
                 "maxsize": maxsize,
                 "binary_operators": binary_operators,
                 "unary_operators": unary_operators,
-                "variable_names": ["x", "y"],
                 "progress": True,
                 "verbosity": 0,
             }
@@ -200,13 +199,13 @@ class SymbolicExtractor:
                 pysr_kwargs.update(extra_pysr_kwargs)
 
             regressor = PySRRegressor(**pysr_kwargs)
-            regressor.fit(coords, y_channel)
+            regressor.fit(coords, y_channel, variable_names=["x", "y"])
 
             # Extract Pareto front from the fitted model --------------------
             eqs_df = regressor.equations_  # pandas DataFrame
-            eq_strs: list[str] = eqs_df["equation"].tolist()
-            complexities: list[float] = eqs_df["complexity"].tolist()
-            losses: list[float] = eqs_df["loss"].tolist()
+            eq_strs: list[str] = [str(x) for x in eqs_df["equation"].tolist()]
+            complexities: list[float] = [float(x) for x in eqs_df["complexity"].tolist()]
+            losses: list[float] = [float(x) for x in eqs_df["loss"].tolist()]
 
             all_equations.append(eq_strs)
             all_complexities.append(complexities)
@@ -214,13 +213,13 @@ class SymbolicExtractor:
 
             # PySR's best is the model-selected row
             best_idx = int(eqs_df["loss"].idxmin())
-            best_eqs.append(eq_strs[best_idx])
+            best_eqs.append(str(eq_strs[best_idx]))
 
             # Try to get LaTeX; fall back to raw string
             try:
-                best_latexs.append(regressor.latex())
+                best_latexs.append(str(regressor.latex()))
             except Exception:  # noqa: BLE001
-                best_latexs.append(eq_strs[best_idx])
+                best_latexs.append(str(eq_strs[best_idx]))
 
             logger.info(
                 "Channel %s best: %s (loss=%.6f)",
@@ -233,8 +232,8 @@ class SymbolicExtractor:
             equations=all_equations,
             complexities=all_complexities,
             losses=all_losses,
-            best_equation=" ; ".join(best_eqs),
-            best_latex=" ; ".join(best_latexs),
+            best_equation=" ; ".join(str(e) for e in best_eqs),
+            best_latex=" ; ".join(str(l) for l in best_latexs),
         )
 
 

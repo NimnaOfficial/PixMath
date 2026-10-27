@@ -33,6 +33,14 @@ if [ ! -f "$ENV_FILE" ] && [ -f "$ENV_EXAMPLE" ]; then
     cp "$ENV_EXAMPLE" "$ENV_FILE"
 fi
 
+# Load environment variables from .env
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+fi
+
 # Detect Python interpreter (.venv preferred, fallback to uv / system python3)
 PYTHON_BIN=""
 if [ -x "$ROOT_PATH/.venv/bin/python" ]; then
@@ -79,6 +87,13 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     if docker compose -f infra/compose.yaml up -d; then
         DOCKER_RUNNING=1
         echo -e "${GREEN}[OK] RabbitMQ, Redis, Postgres, and MinIO started.${NC}"
+        # Brief pause to ensure RabbitMQ port is ready for clients
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if (echo > /dev/tcp/127.0.0.1/5672) 2>/dev/null; then
+                break
+            fi
+            sleep 0.5
+        done
     else
         echo -e "${YELLOW}[-] Docker container launch failed. Continuing in standalone mode.${NC}"
     fi
@@ -88,33 +103,33 @@ fi
 
 # 3. Launch API Gateway (FastAPI + Strawberry GraphQL + WebSockets)
 echo -e "${CYAN}[+] Starting PixMath API Gateway (Port 8000)...${NC}"
-(cd "$ROOT_PATH/apps/api-gateway" && setsid "$PYTHON_BIN" -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 \
-    > "$LOGS_DIR/gateway.log" 2> "$LOGS_DIR/gateway.err.log" < /dev/null &)
+setsid bash -c "cd '$ROOT_PATH/apps/api-gateway' && exec '$PYTHON_BIN' -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000" \
+    > "$LOGS_DIR/gateway.log" 2> "$LOGS_DIR/gateway.err.log" < /dev/null &
 GATEWAY_PID=$!
 
 # 4. Launch Forward Worker
 echo -e "${CYAN}[+] Starting Forward Worker...${NC}"
-(cd "$ROOT_PATH/services/forward-worker" && setsid "$PYTHON_BIN" -m app.worker \
-    > "$LOGS_DIR/forward_worker.log" 2> "$LOGS_DIR/forward_worker.err.log" < /dev/null &)
+setsid bash -c "cd '$ROOT_PATH/services/forward-worker' && exec '$PYTHON_BIN' -m app.worker" \
+    > "$LOGS_DIR/forward_worker.log" 2> "$LOGS_DIR/forward_worker.err.log" < /dev/null &
 FWD_PID=$!
 
 # 5. Launch Reverse Worker
 echo -e "${CYAN}[+] Starting Reverse Worker...${NC}"
-(cd "$ROOT_PATH/services/reverse-worker" && setsid "$PYTHON_BIN" -m app.worker \
-    > "$LOGS_DIR/reverse_worker.log" 2> "$LOGS_DIR/reverse_worker.err.log" < /dev/null &)
+setsid bash -c "cd '$ROOT_PATH/services/reverse-worker' && exec '$PYTHON_BIN' -m app.worker" \
+    > "$LOGS_DIR/reverse_worker.log" 2> "$LOGS_DIR/reverse_worker.err.log" < /dev/null &
 REV_PID=$!
 
 # 6. Launch DLX Monitor
 echo -e "${CYAN}[+] Starting DLX Monitor...${NC}"
-(cd "$ROOT_PATH/services/dlx-monitor" && setsid "$PYTHON_BIN" -m app.telemetry \
-    > "$LOGS_DIR/dlx_monitor.log" 2> "$LOGS_DIR/dlx_monitor.err.log" < /dev/null &)
+setsid bash -c "cd '$ROOT_PATH/services/dlx-monitor' && exec '$PYTHON_BIN' -m app.telemetry" \
+    > "$LOGS_DIR/dlx_monitor.log" 2> "$LOGS_DIR/dlx_monitor.err.log" < /dev/null &
 DLX_PID=$!
 
 # 7. Launch Web Studio Frontend (React 19 + WebGL2 on Port 5173)
 WEB_PID=0
 if command -v npm >/dev/null 2>&1; then
     echo -e "${CYAN}[+] Starting PixMath Web Studio (Port 5173)...${NC}"
-    setsid npm --prefix "$ROOT_PATH/apps/web-studio" run dev -- --host 0.0.0.0 \
+    setsid bash -c "cd '$ROOT_PATH/apps/web-studio' && exec npm run dev -- --host 0.0.0.0" \
         > "$LOGS_DIR/web_studio.log" 2> "$LOGS_DIR/web_studio.err.log" < /dev/null &
     WEB_PID=$!
 fi
@@ -122,11 +137,11 @@ fi
 # Save PIDs to JSON file for clean shutdown
 cat <<EOF > "$ROOT_PATH/.pixmath_services.json"
 {
-  "Gateway": $GATEWAY_PID,
-  "ForwardWorker": $FWD_PID,
-  "ReverseWorker": $REV_PID,
-  "DLXMonitor": $DLX_PID,
-  "WebStudio": $WEB_PID
+  "Gateway": ${GATEWAY_PID:-0},
+  "ForwardWorker": ${FWD_PID:-0},
+  "ReverseWorker": ${REV_PID:-0},
+  "DLXMonitor": ${DLX_PID:-0},
+  "WebStudio": ${WEB_PID:-0}
 }
 EOF
 
