@@ -154,13 +154,14 @@ class ReverseWorker:
                     )
                 return {"job_id": job_id, "status": "FAILED", "error": err_msg}
 
-        # 2. Math Recognition Pipeline (Lossless Watermark or 2D Structural Parsing)
+        # 2. Math Recognition Pipeline (Lossless Watermark or 2D Surface Regression)
         from pixmath_core.recognition import recognize_math_equation
         if image_bytes:
             rec_res = recognize_math_equation(image_bytes)
             if rec_res.is_roundtrip_lossless or rec_res.confidence >= 80.0:
-                await self.emit_progress(job_id, "structural_parsing", 50.0, message="Math-aware structural 2D recognition")
-                await self.emit_progress(job_id, "confidence_scoring", 90.0, message=f"Evaluated confidence: {rec_res.confidence}%")
+                await self.emit_progress(job_id, "surface_extraction", 40.0, message="Sampling 2D plot coordinates and inverting color elevation")
+                await self.emit_progress(job_id, "symbolic_regression", 70.0, message=f"Surface regression fitted: {rec_res.method}")
+                await self.emit_progress(job_id, "confidence_scoring", 90.0, message=f"Evaluated fit confidence: {rec_res.confidence}%")
                 result = {
                     "job_id": job_id,
                     "status": "COMPLETED",
@@ -173,6 +174,7 @@ class ReverseWorker:
                     "is_roundtrip_lossless": rec_res.is_roundtrip_lossless,
                     "method": rec_res.method,
                     "uncertain_tokens": rec_res.uncertain_tokens,
+                    "confidence_report": rec_res.confidence_report,
                 }
                 await self.emit_progress(job_id, "completed", 100.0, result=result)
                 if self._redis_client:
@@ -188,6 +190,7 @@ class ReverseWorker:
                                 "is_roundtrip_lossless": rec_res.is_roundtrip_lossless,
                                 "method": rec_res.method,
                                 "uncertain_tokens": rec_res.uncertain_tokens,
+                                "confidence_report": rec_res.confidence_report,
                                 "complexity": 1.0,
                                 "loss": 0.0,
                             },

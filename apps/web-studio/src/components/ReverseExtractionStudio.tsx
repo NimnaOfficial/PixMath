@@ -692,7 +692,7 @@ export function ReverseExtractionStudio({ onNotify }: ReverseExtractionStudioPro
                       </span>
                     ) : (
                       <span className="px-2.5 py-1 rounded-lg bg-white/[0.06] text-slate-300 border border-white/[0.1] font-medium hidden sm:inline">
-                        Method: {reverseExtractedResult.method || '2D Structural'}
+                        Method: {reverseExtractedResult.method || 'Surface Regression'}
                       </span>
                     )}
                   </div>
@@ -703,23 +703,23 @@ export function ReverseExtractionStudio({ onNotify }: ReverseExtractionStudioPro
                   <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 font-mono text-xs space-y-2">
                     <div className="flex items-center space-x-2 text-amber-300 font-bold">
                       <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>Low Certainty Warning ({reverseExtractedResult.confidence}% Accuracy)</span>
+                      <span>Surface Fit Notice ({reverseExtractedResult.confidence}% Fit Fidelity)</span>
                     </div>
                     <p className="text-[11px] text-slate-300 leading-relaxed">
-                      Certain fine mathematical symbols, exponents, or fraction baselines were ambiguous.
-                      We recommend reviewing the equation and making any manual edits by clicking{' '}
+                      The surface regression engine identified the primary continuous contour topology, but high-frequency harmonics or subtle ripples may have higher error variance.
+                      We recommend reviewing the equation and making fine-tuning edits by clicking{' '}
                       <span className="text-cyan-300 font-bold">Edit in Forward Mode</span> below.
                     </p>
                     {reverseExtractedResult.uncertainTokens && reverseExtractedResult.uncertainTokens.length > 0 && (
                       <div className="pt-1 flex flex-wrap gap-1.5 items-center">
-                        <span className="text-[10px] text-amber-400 font-bold">Flagged Symbols:</span>
+                        <span className="text-[10px] text-amber-400 font-bold">Diagnostics:</span>
                         {reverseExtractedResult.uncertainTokens.map((tok, idx) => (
                           <span
                             key={idx}
                             className="px-2 py-0.5 rounded bg-amber-400/20 border border-amber-400/40 text-amber-200 text-[10px] font-bold"
                             title={tok.reason}
                           >
-                            '{tok.token}' ({tok.confidence}%)
+                            {tok.token} ({tok.confidence}%)
                           </span>
                         ))}
                       </div>

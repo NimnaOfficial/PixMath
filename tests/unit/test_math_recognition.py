@@ -1,22 +1,27 @@
-"""Unit tests for proven Math OCR integration, LaTeX translation, and lossless watermarking."""
+"""Unit tests for Computer Vision 2D Plot Extraction and Symbolic Surface Regression."""
+
+from __future__ import annotations
 
 import io
+import numpy as np
 import pytest
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from pixmath_core.recognition import (
+    CartesianGridInfo,
     ConfidenceReport,
     ConfidenceScorer,
-    LatexOCRLocalClient,
-    MathOCRExecutionResult,
+    ExtractedSurfaceData,
     MathRecognitionEngine,
     MathRecognitionResult,
-    MathpixOCRClient,
+    SurfaceRegressionResult,
+    detect_cartesian_grid,
     embed_forward_watermark,
     extract_forward_watermark,
-    latex_to_equation,
+    extract_surface_points,
+    fit_surface_equation,
+    map_color_to_z,
     recognize_math_equation,
-    route_to_math_ocr,
 )
 
 
@@ -27,7 +32,6 @@ class TestForwardWatermarking:
         eq = "sin(x) * cos(y) + sqrt(x^2 + y^2)"
         ltx = r"\sin(x) \cos(y) + \sqrt{x^2 + y^2}"
 
-        # Create dummy image
         img = Image.new("RGB", (256, 256), color=(20, 30, 40))
         watermarked = embed_forward_watermark(img, equation=eq, latex=ltx)
 
@@ -68,33 +72,153 @@ class TestForwardWatermarking:
         assert extract_forward_watermark(img) is None
 
 
-class TestLatexToEquation:
-    """Test conversion from mathematical LaTeX into PixMath Python expressions."""
+class TestSurfaceDataExtraction:
+    """Test Computer Vision 2D plot extraction: grid detection and color-to-Z mapping."""
 
-    def test_fractions_and_powers(self) -> None:
-        ltx = r"\frac{x^2 + 1}{y - 3}"
-        eq = latex_to_equation(ltx)
-        assert "/" in eq
-        assert "x" in eq and "y" in eq
-        assert "**" in eq
+    def test_cartesian_grid_detection_with_axes(self) -> None:
+        img = np.zeros((256, 256), dtype=np.float32)
+        # Background gradient
+        y, x = np.mgrid[0:256, 0:256]
+        img[:, :] = np.sin(x / 16.0) * 0.2 + 0.5
+        # Primary axes at center 128, 128
+        img[128, :] = 1.0
+        img[:, 128] = 1.0
 
-    def test_trigonometric_and_radicals(self) -> None:
-        ltx = r"\sin(x) \cos(y) + \sqrt{x^2 + y^2}"
-        eq = latex_to_equation(ltx)
-        assert "sin(x)" in eq
-        assert "cos(y)" in eq
-        assert "sqrt(" in eq
+        grid_info = detect_cartesian_grid(img)
+        assert isinstance(grid_info, CartesianGridInfo)
+        assert abs(grid_info.origin_x - 128.0) <= 2.0
+        assert abs(grid_info.origin_y - 128.0) <= 2.0
 
-    def test_implicit_multiplication(self) -> None:
-        ltx = r"2x + 3y"
-        eq = latex_to_equation(ltx)
-        assert "2*x" in eq
-        assert "3*y" in eq
+    def test_color_to_z_mapping(self) -> None:
+        orange_peak = np.array([0.96, 0.62, 0.04])
+        black_trough = np.array([0.02, 0.03, 0.05])
+        cyan_zero = np.array([0.02, 0.71, 0.83])
+        green_zero = np.array([0.06, 0.72, 0.51])
 
-    def test_parentheses_balancing(self) -> None:
-        ltx = r"((x + 1) * (y - 1"
-        eq = latex_to_equation(ltx)
-        assert eq.count("(") == eq.count(")")
+        z_orange = float(map_color_to_z(orange_peak))
+        z_black = float(map_color_to_z(black_trough))
+        z_cyan = float(map_color_to_z(cyan_zero))
+        z_green = float(map_color_to_z(green_zero))
+
+        assert z_orange >= 0.7, f"Orange should map to positive peak, got {z_orange}"
+        assert z_black <= -0.7, f"Black should map to negative trough, got {z_black}"
+        assert abs(z_cyan) <= 0.35, f"Cyan should map near zero, got {z_cyan}"
+        assert abs(z_green) <= 0.35, f"Green should map near zero, got {z_green}"
+
+    def test_extract_surface_points_ephemeral(self) -> None:
+        pil_img = Image.new("RGB", (128, 128), color=(30, 40, 50))
+        surf_data = extract_surface_points(pil_img, sample_resolution=32)
+
+        assert isinstance(surf_data, ExtractedSurfaceData)
+        assert surf_data.coords.shape == (32 * 32, 2)
+        assert surf_data.z_values.shape == (32 * 32,)
+        assert surf_data.z_grid.shape == (32, 32)
+        assert np.all(surf_data.z_values >= -1.0) and np.all(surf_data.z_values <= 1.0)
+
+
+class TestSurfaceSymbolicRegression:
+    """Test fitting mathematical closed-form formulas to continuous 2D surface data."""
+
+    def test_harmonic_wave_product_fitting(self) -> None:
+        # Create synthetic surface z = sin(3x) * cos(3y)
+        res = 48
+        lin = np.linspace(-1.0, 1.0, res, dtype=np.float32)
+        gy, gx = np.meshgrid(lin, lin, indexing="ij")
+        z_true = np.sin(3.0 * gx) * np.cos(3.0 * gy)
+
+        grid_info = CartesianGridInfo(
+            has_grid=False,
+            origin_x=res / 2.0,
+            origin_y=res / 2.0,
+            scale_x=res / 2.0,
+            scale_y=res / 2.0,
+            domain_x=(-1.0, 1.0),
+            domain_y=(-1.0, 1.0),
+            grid_spacing=None,
+        )
+        surf_data = ExtractedSurfaceData(
+            coords=np.column_stack([gx.ravel(), gy.ravel()]),
+            z_values=z_true.ravel(),
+            z_grid=z_true,
+            x_lin=lin,
+            y_lin=lin,
+            grid_info=grid_info,
+            width=res,
+            height=res,
+        )
+
+        result = fit_surface_equation(surf_data)
+        assert isinstance(result, SurfaceRegressionResult)
+        assert "sin" in result.equation and "cos" in result.equation
+        assert result.r2_score >= 0.90
+        assert result.confidence >= 90.0
+        assert result.confidence_grade == "high"
+
+    def test_radial_ripple_fitting(self) -> None:
+        res = 48
+        lin = np.linspace(-1.0, 1.0, res, dtype=np.float32)
+        gy, gx = np.meshgrid(lin, lin, indexing="ij")
+        r = np.sqrt(gx**2 + gy**2)
+        z_true = np.sin(5.0 * r)
+
+        grid_info = CartesianGridInfo(
+            has_grid=False,
+            origin_x=res / 2.0,
+            origin_y=res / 2.0,
+            scale_x=res / 2.0,
+            scale_y=res / 2.0,
+            domain_x=(-1.0, 1.0),
+            domain_y=(-1.0, 1.0),
+            grid_spacing=None,
+        )
+        surf_data = ExtractedSurfaceData(
+            coords=np.column_stack([gx.ravel(), gy.ravel()]),
+            z_values=z_true.ravel(),
+            z_grid=z_true,
+            x_lin=lin,
+            y_lin=lin,
+            grid_info=grid_info,
+            width=res,
+            height=res,
+        )
+
+        result = fit_surface_equation(surf_data)
+        assert "sqrt" in result.equation
+        assert result.r2_score >= 0.90
+        assert result.confidence >= 90.0
+        assert result.method == "radial_concentric_wave"
+
+    def test_quadric_saddle_fitting(self) -> None:
+        res = 48
+        lin = np.linspace(-1.0, 1.0, res, dtype=np.float32)
+        gy, gx = np.meshgrid(lin, lin, indexing="ij")
+        z_true = gx**2 - gy**2
+
+        grid_info = CartesianGridInfo(
+            has_grid=False,
+            origin_x=res / 2.0,
+            origin_y=res / 2.0,
+            scale_x=res / 2.0,
+            scale_y=res / 2.0,
+            domain_x=(-1.0, 1.0),
+            domain_y=(-1.0, 1.0),
+            grid_spacing=None,
+        )
+        surf_data = ExtractedSurfaceData(
+            coords=np.column_stack([gx.ravel(), gy.ravel()]),
+            z_values=z_true.ravel(),
+            z_grid=z_true,
+            x_lin=lin,
+            y_lin=lin,
+            grid_info=grid_info,
+            width=res,
+            height=res,
+        )
+
+        result = fit_surface_equation(surf_data)
+        assert ("x" in result.equation) and ("y" in result.equation)
+        assert result.r2_score >= 0.95
+        assert result.confidence >= 90.0
 
 
 class TestConfidenceScorer:
@@ -116,9 +240,11 @@ class TestConfidenceScorer:
     def test_low_confidence_triggers_warning(self) -> None:
         scorer = ConfidenceScorer()
         report = scorer.evaluate(
-            equation="invalid +++ ??",
-            latex="?",
-            raw_confidence=40.0,
+            equation="sin(x * 3.0)",
+            latex=r"\sin(3x)",
+            raw_confidence=50.0,
+            r2_score=0.50,
+            rmse=0.35,
             is_watermarked=False,
         )
         assert report.overall_score < 80.0
@@ -126,31 +252,6 @@ class TestConfidenceScorer:
         assert report.is_reliable is False
         assert report.warning_message is not None
         assert "Forward Mode" in report.warning_message
-
-
-class TestProvenMathOCRClients:
-    """Test clean data handoff to Mathpix API and local LaTeX-OCR clients."""
-
-    def test_mathpix_client_availability(self) -> None:
-        client = MathpixOCRClient(app_id="test_id", app_key="test_key")
-        assert client.is_available is True
-
-        empty_client = MathpixOCRClient(app_id="", app_key="")
-        assert empty_client.is_available is False
-
-    def test_route_to_math_ocr_fallback(self) -> None:
-        # Create a clean formula image
-        img = Image.new("RGB", (200, 80), color="white")
-        draw = ImageDraw.Draw(img)
-        draw.text((20, 20), "x + y", fill="black")
-
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        res = route_to_math_ocr(buf.getvalue())
-
-        assert isinstance(res, MathOCRExecutionResult)
-        assert res.confidence > 0.0
-        assert isinstance(res.equation, str)
 
 
 class TestEngineEndToEnd:
@@ -176,3 +277,36 @@ class TestEngineEndToEnd:
         assert result.is_roundtrip_lossless is True
         assert result.method == "lossless_watermark"
         assert result.processing_time_ms < 50.0
+
+    def test_unwatermarked_plot_surface_recognition(self) -> None:
+        # Generate an unwatermarked 2D scalar plot
+        res = 128
+        lin = np.linspace(-1.0, 1.0, res, dtype=np.float32)
+        gy, gx = np.meshgrid(lin, lin, indexing="ij")
+        z_true = np.sin(3.0 * gx) * np.cos(3.0 * gy)
+
+        elev = np.clip(z_true * 0.5 + 0.5, 0.0, 1.0)
+        void = np.array([0.02, 0.03, 0.05])
+        cyan = np.array([0.02, 0.71, 0.83])
+        emerald = np.array([0.06, 0.72, 0.51])
+        amber = np.array([0.96, 0.62, 0.04])
+
+        def smoothstep(e0, e1, v):
+            t = np.clip((v - e0) / (e1 - e0), 0.0, 1.0)
+            return t * t * (3.0 - 2.0 * t)
+
+        col = void + (cyan - void) * smoothstep(0.1, 0.5, elev)[:, :, None]
+        col = col + (emerald - col) * smoothstep(0.5, 0.8, elev)[:, :, None]
+        col = col + (amber - col) * smoothstep(0.8, 0.98, elev)[:, :, None]
+        img_arr = (np.clip(col, 0.0, 1.0) * 255.0).astype(np.uint8)
+
+        pil_img = Image.fromarray(img_arr, mode="RGB")
+        buf = io.BytesIO()
+        pil_img.save(buf, format="PNG")
+
+        result = recognize_math_equation(buf.getvalue())
+        assert isinstance(result, MathRecognitionResult)
+        assert result.is_roundtrip_lossless is False
+        assert "sin" in result.equation and "cos" in result.equation
+        assert result.confidence >= 80.0
+        assert result.method == "harmonic_wave_product"
