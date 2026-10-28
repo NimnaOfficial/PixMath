@@ -4,6 +4,7 @@ import { SymbolicEditorPanel } from './components/SymbolicEditorPanel';
 import { MathCanvas } from './components/MathCanvas';
 import { AnalyticsRadarPanel } from './components/AnalyticsRadarPanel';
 import { ReverseExtractionStudio } from './components/ReverseExtractionStudio';
+import { HelpDocumentationStudio } from './components/HelpDocumentationStudio';
 import { useStudioStore } from './store/useStudioStore';
 import {
   ChevronLeft,
@@ -118,7 +119,11 @@ void main() {
       <StudioTopbar onPresetSelect={(name) => notify(`Loaded Preset: ${name}`)} />
 
       {/* ── 2. Master Workstation Topology ────────────────────── */}
-      {mode === 'reverse' ? (
+      {mode === 'help' ? (
+        <main className="flex-1 w-full p-2 md:p-4 overflow-y-auto relative animate-fade-in">
+          <HelpDocumentationStudio onNotify={notify} />
+        </main>
+      ) : mode === 'reverse' ? (
         <main className="flex-1 w-full p-2 md:p-4 overflow-y-auto relative animate-fade-in">
           <ReverseExtractionStudio onNotify={notify} />
         </main>

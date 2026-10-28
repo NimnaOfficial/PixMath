@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type StudioMode = 'forward' | 'reverse';
+export type StudioMode = 'forward' | 'reverse' | 'help';
 
 export interface ValidationMetrics {
   width: number;

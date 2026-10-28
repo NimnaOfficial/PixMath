@@ -4,6 +4,7 @@ import {
   ArrowRightLeft,
   Zap,
   Cpu,
+  BookOpen,
 } from 'lucide-react';
 
 interface StudioTopbarProps {
@@ -88,7 +89,20 @@ export function StudioTopbar({ onPresetSelect }: StudioTopbarProps) {
             }`}
           >
             <ArrowRightLeft className="w-3.5 h-3.5" />
-            <span>Reverse Mode (Image → SIREN/KAN)</span>
+            <span>Reverse Mode</span>
+          </button>
+
+          <button
+            onClick={() => setMode('help')}
+            className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all ${
+              mode === 'help'
+                ? 'bg-[#10B981]/20 text-[#10B981] border border-[#10B981]/50 shadow-md shadow-[#10B981]/10'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Comprehensive Documentation & Feature Guides"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>Help &amp; Guides</span>
           </button>
         </div>
       </div>
