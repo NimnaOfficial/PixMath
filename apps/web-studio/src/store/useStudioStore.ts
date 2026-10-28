@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type StudioMode = 'forward' | 'reverse';
+export type StudioMode = 'forward' | 'reverse' | 'help';
 
 export interface ValidationMetrics {
   width: number;
@@ -25,12 +25,24 @@ export interface ImageValidationReport {
   recommended_action: string;
 }
 
+export interface UncertainTokenInfo {
+  token: string;
+  position: [number, number];
+  confidence: number;
+  reason: string;
+}
+
 export interface ReverseExtractedResult {
   equation: string;
   latex: string;
   complexity: number;
   loss: number;
   psnr?: number;
+  confidence: number;
+  confidenceGrade: 'high' | 'medium' | 'low';
+  isRoundtripLossless?: boolean;
+  method?: string;
+  uncertainTokens?: UncertainTokenInfo[];
 }
 
 export type ReverseStatus = 'idle' | 'validating' | 'extracting' | 'success' | 'declined';

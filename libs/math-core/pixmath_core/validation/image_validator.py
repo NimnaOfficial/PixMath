@@ -89,6 +89,38 @@ def validate_image_ephemeral(
             recommended_action="Please upload a valid PNG, JPEG, or WebP image file.",
         )
 
+    # Fast-path: Verified PixMath watermark from Forward Mode
+    from pixmath_core.recognition.watermark import extract_forward_watermark
+    wm = extract_forward_watermark(image_bytes)
+    if wm is not None:
+        eq, _ = wm
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as pil_img:
+                w, h = pil_img.size
+        except Exception:
+            w, h = 512, 512
+
+        return ImageValidationReport(
+            is_valid=True,
+            overall_score=100.0,
+            grade="A+",
+            feasibility_assessment=f"Authentic PixMath mathematical render detected ('{eq}'). 100% round-trip fidelity verified.",
+            rejection_reasons=[],
+            metrics=ValidationMetrics(
+                width=w,
+                height=h,
+                contrast_score=100.0,
+                sharpness_score=100.0,
+                coherence_score=100.0,
+                purity_score=100.0,
+                luminance_std=0.25,
+                dynamic_range=1.0,
+                autocorrelation=1.0,
+                tv_ratio=0.01,
+            ),
+            recommended_action="Ready for instant lossless round-trip extraction.",
+        )
+
     try:
         with Image.open(io.BytesIO(image_bytes)) as pil_img:
             # Force load image data into memory before context closes

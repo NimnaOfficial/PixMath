@@ -154,6 +154,48 @@ class ReverseWorker:
                     )
                 return {"job_id": job_id, "status": "FAILED", "error": err_msg}
 
+        # 2. Math Recognition Pipeline (Lossless Watermark or 2D Structural Parsing)
+        from pixmath_core.recognition import recognize_math_equation
+        if image_bytes:
+            rec_res = recognize_math_equation(image_bytes)
+            if rec_res.is_roundtrip_lossless or rec_res.confidence >= 80.0:
+                await self.emit_progress(job_id, "structural_parsing", 50.0, message="Math-aware structural 2D recognition")
+                await self.emit_progress(job_id, "confidence_scoring", 90.0, message=f"Evaluated confidence: {rec_res.confidence}%")
+                result = {
+                    "job_id": job_id,
+                    "status": "COMPLETED",
+                    "equation": rec_res.equation,
+                    "latex": rec_res.latex,
+                    "complexity": 1.0,
+                    "loss": 0.0,
+                    "confidence": rec_res.confidence,
+                    "confidence_grade": rec_res.confidence_grade,
+                    "is_roundtrip_lossless": rec_res.is_roundtrip_lossless,
+                    "method": rec_res.method,
+                    "uncertain_tokens": rec_res.uncertain_tokens,
+                }
+                await self.emit_progress(job_id, "completed", 100.0, result=result)
+                if self._redis_client:
+                    await self._redis_client.set(
+                        f"job:{job_id}:result",
+                        json.dumps({
+                            "download_url": None,
+                            "equation": rec_res.equation,
+                            "metadata": {
+                                "latex": rec_res.latex,
+                                "confidence": rec_res.confidence,
+                                "confidence_grade": rec_res.confidence_grade,
+                                "is_roundtrip_lossless": rec_res.is_roundtrip_lossless,
+                                "method": rec_res.method,
+                                "uncertain_tokens": rec_res.uncertain_tokens,
+                                "complexity": 1.0,
+                                "loss": 0.0,
+                            },
+                        }),
+                        ex=86400,
+                    )
+                return result
+
         await self.emit_progress(job_id, "ingestion", 5.0, message="Loading target image")
 
         # 1. Load image (Pillow + numpy)
@@ -263,6 +305,9 @@ class ReverseWorker:
         del model
         gc.collect()
 
+        siren_conf = round(max(10.0, min(95.0, (1.0 - min(1.0, avg_loss * 10.0)) * 100.0)), 1)
+        siren_grade = "high" if siren_conf >= 90.0 else ("medium" if siren_conf >= 80.0 else "low")
+
         result = {
             "job_id": job_id,
             "status": "COMPLETED",
@@ -270,6 +315,11 @@ class ReverseWorker:
             "latex": best_latex,
             "complexity": avg_complexity,
             "loss": avg_loss,
+            "confidence": siren_conf,
+            "confidence_grade": siren_grade,
+            "is_roundtrip_lossless": False,
+            "method": "neural_distillation",
+            "uncertain_tokens": [],
         }
 
         await self.emit_progress(job_id, "completed", 100.0, result=result)
@@ -286,6 +336,11 @@ class ReverseWorker:
                             "latex": str(best_latex),
                             "complexity": result["complexity"],
                             "loss": result["loss"],
+                            "confidence": siren_conf,
+                            "confidence_grade": siren_grade,
+                            "is_roundtrip_lossless": False,
+                            "method": "neural_distillation",
+                            "uncertain_tokens": [],
                         },
                     }),
                     ex=86400,

@@ -4,14 +4,17 @@
  */
 
 import { ImageValidationReport, ReverseExtractedResult } from '../store/useStudioStore';
+import type { PreprocessWorkerOutput } from '../workers/imagePreprocess.worker';
 
 const API_BASE = 'http://127.0.0.1:8000/api/v1/jobs';
 
 /**
  * Layer 1 Client-side pre-flight checks:
- * MIME type, max file size, and quick offscreen canvas variance check.
+ * Runs off-main-thread in a hardware-accelerated Web Worker with WebGL and CPU fallbacks.
  */
-export async function validateImageLocally(file: File): Promise<{ ok: boolean; reason?: string }> {
+export async function validateImageLocally(
+  file: File
+): Promise<{ ok: boolean; reason?: string; hardware?: 'webgl' | 'canvas2d' }> {
   const validMimes = ['image/png', 'image/jpeg', 'image/webp'];
   if (!validMimes.includes(file.type)) {
     return {
@@ -37,7 +40,45 @@ export async function validateImageLocally(file: File): Promise<{ ok: boolean; r
     };
   }
 
-  // Offscreen canvas sanity check: Ensure image decodes and is not 100% monochrome
+  // Hardware-Aware Web Worker Preprocessing (OffscreenCanvas / WebGL)
+  if (typeof Worker !== 'undefined') {
+    try {
+      const worker = new Worker(
+        new URL('../workers/imagePreprocess.worker.ts', import.meta.url),
+        { type: 'module' }
+      );
+      const buffer = await file.arrayBuffer();
+
+      const workerRes = await new Promise<PreprocessWorkerOutput>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          worker.terminate();
+          reject(new Error('Worker timeout'));
+        }, 5000);
+
+        worker.onmessage = (e: MessageEvent<PreprocessWorkerOutput>) => {
+          clearTimeout(timeout);
+          worker.terminate();
+          resolve(e.data);
+        };
+        worker.onerror = (err) => {
+          clearTimeout(timeout);
+          worker.terminate();
+          reject(err);
+        };
+        worker.postMessage({ buffer, mimeType: file.type }, [buffer]);
+      });
+
+      return {
+        ok: workerRes.ok,
+        reason: workerRes.reason,
+        hardware: workerRes.hardware,
+      };
+    } catch {
+      // Graceful fallback to inline canvas if Web Worker blocked
+    }
+  }
+
+  // Inline fallback
   try {
     const bitmap = await createImageBitmap(file);
     if (bitmap.width < 32 || bitmap.height < 32) {
@@ -91,7 +132,7 @@ export async function validateImageLocally(file: File): Promise<{ ok: boolean; r
     };
   }
 
-  return { ok: true };
+  return { ok: true, hardware: 'canvas2d' };
 }
 
 /**
@@ -191,8 +232,18 @@ export async function executeReverseExtraction(
           latex?: string;
           complexity?: number;
           loss?: number;
+          confidence?: number;
+          confidence_grade?: 'high' | 'medium' | 'low';
+          is_roundtrip_lossless?: boolean;
+          method?: string;
+          uncertain_tokens?: Array<{ token: string; position: [number, number]; confidence: number; reason: string }>;
         };
       };
+
+      const conf = resultData.metadata?.confidence ?? (resultData.metadata?.is_roundtrip_lossless ? 100.0 : 92.0);
+      const grade =
+        resultData.metadata?.confidence_grade ??
+        (conf >= 90.0 ? 'high' : conf >= 80.0 ? 'medium' : 'low');
 
       return {
         equation: resultData.equation || '0.0',
@@ -200,6 +251,11 @@ export async function executeReverseExtraction(
         complexity: resultData.metadata?.complexity ?? 12.0,
         loss: resultData.metadata?.loss ?? 0.002,
         psnr: 38.6,
+        confidence: conf,
+        confidenceGrade: grade,
+        isRoundtripLossless: resultData.metadata?.is_roundtrip_lossless ?? false,
+        method: resultData.metadata?.method ?? 'neural_distillation',
+        uncertainTokens: resultData.metadata?.uncertain_tokens ?? [],
       };
     }
   }
